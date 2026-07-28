@@ -1,0 +1,248 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Read effective OpenSSH server configuration
+  ansible.builtin.shell: |
+    sshd_path=/usr/sbin/sshd
+    if [[ ! -x "$sshd_path" ]]; then
+      printf '%s\n' 'OpenSSH server is not installed'
+      exit 3
+    fi
+    "$sshd_path" -T 2>&1
+  args:
+    executable: /bin/bash
+  register: dfsa_sshd_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: >-
+    dfsa_selected_ids
+    | select('match', '^DFSA-SSH-')
+    | list
+    | length > 0
+
+- name: Derive effective OpenSSH values
+  ansible.builtin.set_fact:
+    dfsa_sshd_permit_root_login: >-
+      {{
+        (
+          dfsa_sshd_probe.stdout
+          | regex_findall('(?m)^permitrootlogin\s+(\S+)')
+          | first
+        )
+        | default('')
+      }}
+    dfsa_sshd_permit_empty_passwords: >-
+      {{
+        (
+          dfsa_sshd_probe.stdout
+          | regex_findall('(?m)^permitemptypasswords\s+(\S+)')
+          | first
+        )
+        | default('')
+      }}
+    dfsa_sshd_hostbased_authentication: >-
+      {{
+        (
+          dfsa_sshd_probe.stdout
+          | regex_findall('(?m)^hostbasedauthentication\s+(\S+)')
+          | first
+        )
+        | default('')
+      }}
+    dfsa_sshd_ignore_rhosts: >-
+      {{
+        (
+          dfsa_sshd_probe.stdout
+          | regex_findall('(?m)^ignorerhosts\s+(\S+)')
+          | first
+        )
+        | default('')
+      }}
+    dfsa_sshd_max_auth_tries_effective: >-
+      {{
+        (
+          dfsa_sshd_probe.stdout
+          | regex_findall('(?m)^maxauthtries\s+(\S+)')
+          | first
+        )
+        | default('')
+      }}
+    dfsa_sshd_password_authentication: >-
+      {{
+        (
+          dfsa_sshd_probe.stdout
+          | regex_findall('(?m)^passwordauthentication\s+(\S+)')
+          | first
+        )
+        | default('')
+      }}
+    dfsa_sshd_x11_forwarding: >-
+      {{
+        (
+          dfsa_sshd_probe.stdout
+          | regex_findall('(?m)^x11forwarding\s+(\S+)')
+          | first
+        )
+        | default('')
+      }}
+  when:
+    - dfsa_sshd_probe is not skipped
+    - dfsa_sshd_probe.rc == 0
+
+- name: Record DFSA-SSH-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SSH-001
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_sshd_probe.rc == 0
+        else ('not_applicable' if dfsa_sshd_probe.rc == 3 else 'error')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'OpenSSH server is not installed.'
+        if dfsa_sshd_probe.rc == 3
+        else (
+          'sshd accepted its effective configuration.'
+          if dfsa_sshd_probe.rc == 0
+          else 'sshd could not evaluate its effective configuration.'
+        )
+      }}
+    dfsa_record_evidence: >-
+      {{
+        'sshd -T completed successfully'
+        if dfsa_sshd_probe.rc == 0
+        else dfsa_sshd_probe.stdout
+      }}
+  when: "'DFSA-SSH-001' in dfsa_selected_ids"
+
+- name: Record DFSA-SSH-002
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SSH-002
+    dfsa_record_status: >-
+      {{
+        'not_applicable'
+        if dfsa_sshd_probe.rc == 3
+        else (
+          'error'
+          if dfsa_sshd_probe.rc != 0
+          else ('pass' if dfsa_sshd_permit_root_login == 'no' else 'fail')
+        )
+      }}
+    dfsa_record_reason: permitrootlogin must resolve to no.
+    dfsa_record_evidence: "permitrootlogin={{ dfsa_sshd_permit_root_login | default('unavailable') }}"
+  when: "'DFSA-SSH-002' in dfsa_selected_ids"
+
+- name: Record DFSA-SSH-003
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SSH-003
+    dfsa_record_status: >-
+      {{
+        'not_applicable'
+        if dfsa_sshd_probe.rc == 3
+        else (
+          'error'
+          if dfsa_sshd_probe.rc != 0
+          else ('pass' if dfsa_sshd_permit_empty_passwords == 'no' else 'fail')
+        )
+      }}
+    dfsa_record_reason: permitemptypasswords must resolve to no.
+    dfsa_record_evidence: >-
+      permitemptypasswords={{ dfsa_sshd_permit_empty_passwords
+      | default('unavailable') }}
+  when: "'DFSA-SSH-003' in dfsa_selected_ids"
+
+- name: Record DFSA-SSH-004
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SSH-004
+    dfsa_record_status: >-
+      {{
+        'not_applicable'
+        if dfsa_sshd_probe.rc == 3
+        else (
+          'error'
+          if dfsa_sshd_probe.rc != 0
+          else (
+            'pass'
+            if (
+              dfsa_sshd_hostbased_authentication == 'no'
+              and dfsa_sshd_ignore_rhosts == 'yes'
+            )
+            else 'fail'
+          )
+        )
+      }}
+    dfsa_record_reason: hostbasedauthentication must be no and ignorerhosts must be yes.
+    dfsa_record_evidence: >-
+      hostbasedauthentication={{ dfsa_sshd_hostbased_authentication
+      | default('unavailable') }} ignorerhosts={{ dfsa_sshd_ignore_rhosts
+      | default('unavailable') }}
+  when: "'DFSA-SSH-004' in dfsa_selected_ids"
+
+- name: Record DFSA-SSH-005
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SSH-005
+    dfsa_record_status: >-
+      {{
+        'not_applicable'
+        if dfsa_sshd_probe.rc == 3
+        else (
+          'error'
+          if (
+            dfsa_sshd_probe.rc != 0
+            or not (dfsa_sshd_max_auth_tries_effective is match('^[0-9]+$'))
+          )
+          else (
+            'pass'
+            if dfsa_sshd_max_auth_tries_effective | int <= dfsa_sshd_max_auth_tries | int
+            else 'fail'
+          )
+        )
+      }}
+    dfsa_record_reason: "maxauthtries must not exceed {{ dfsa_sshd_max_auth_tries }}."
+    dfsa_record_evidence: >-
+      maxauthtries={{ dfsa_sshd_max_auth_tries_effective | default('unavailable') }}
+  when: "'DFSA-SSH-005' in dfsa_selected_ids"
+
+- name: Record DFSA-SSH-006
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SSH-006
+    dfsa_record_status: >-
+      {{
+        'not_applicable'
+        if dfsa_sshd_probe.rc == 3
+        else (
+          'error'
+          if dfsa_sshd_probe.rc != 0
+          else ('pass' if dfsa_sshd_password_authentication == 'no' else 'fail')
+        )
+      }}
+    dfsa_record_reason: passwordauthentication must resolve to no for strict profiles.
+    dfsa_record_evidence: >-
+      passwordauthentication={{ dfsa_sshd_password_authentication
+      | default('unavailable') }}
+  when: "'DFSA-SSH-006' in dfsa_selected_ids"
+
+- name: Record DFSA-SSH-007
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SSH-007
+    dfsa_record_status: >-
+      {{
+        'not_applicable'
+        if dfsa_sshd_probe.rc == 3
+        else (
+          'error'
+          if dfsa_sshd_probe.rc != 0
+          else ('pass' if dfsa_sshd_x11_forwarding == 'no' else 'fail')
+        )
+      }}
+    dfsa_record_reason: x11forwarding must resolve to no on server profiles.
+    dfsa_record_evidence: "x11forwarding={{ dfsa_sshd_x11_forwarding | default('unavailable') }}"
+  when: "'DFSA-SSH-007' in dfsa_selected_ids"

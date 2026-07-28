@@ -1,0 +1,587 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Find empty local password fields
+  ansible.builtin.shell: |
+    awk -F: '$2 == "" { print $1 }' /etc/shadow
+  args:
+    executable: /bin/bash
+  register: dfsa_id_001_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-001' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-001
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_id_001_probe.rc != 0
+        else ('pass' if dfsa_id_001_probe.stdout | trim | length == 0 else 'fail')
+      }}
+    dfsa_record_reason: Local /etc/shadow entries must not have an empty password field.
+    dfsa_record_evidence: >-
+      {{
+        dfsa_id_001_probe.stderr
+        if dfsa_id_001_probe.rc != 0
+        else (
+          dfsa_id_001_probe.stdout
+          if dfsa_id_001_probe.stdout | trim | length > 0
+          else 'No empty password fields.'
+        )
+      }}
+  when: "'DFSA-ID-001' in dfsa_selected_ids"
+
+- name: Find duplicate local user identifiers
+  ansible.builtin.shell: |
+    set -o pipefail
+    awk -F: '{ count[$3]++; names[$3] = names[$3] " " $1 }
+      END { for (uid in count) if (count[uid] > 1) print uid ":" names[uid] }' \
+      /etc/passwd | sort -n
+  args:
+    executable: /bin/bash
+  register: dfsa_id_002_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-002' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-002
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-002
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_id_002_probe.rc != 0
+        else ('pass' if dfsa_id_002_probe.stdout | trim | length == 0 else 'fail')
+      }}
+    dfsa_record_reason: Every local account must have a unique numeric UID.
+    dfsa_record_evidence: >-
+      {{
+        dfsa_id_002_probe.stderr
+        if dfsa_id_002_probe.rc != 0
+        else (
+          dfsa_id_002_probe.stdout
+          if dfsa_id_002_probe.stdout | trim | length > 0
+          else 'No duplicate UIDs.'
+        )
+      }}
+  when: "'DFSA-ID-002' in dfsa_selected_ids"
+
+- name: Inspect interactive user home directories
+  ansible.builtin.shell: |
+    set -o pipefail
+    [[ -r /etc/passwd ]] || {
+      printf '%s\n' 'Unable to read /etc/passwd' >&2
+      exit 2
+    }
+    problems=()
+    probe_error=0
+    while IFS=: read -r user _ uid _ _ home shell; do
+      if [[ ! "$uid" =~ ^[0-9]+$ ]]; then
+        problems+=("$user:invalid-uid:$uid")
+        probe_error=1
+        continue
+      fi
+      case "$shell" in
+        */nologin|*/false|*/sync|*/shutdown|*/halt) continue ;;
+      esac
+      if [[ ! -d "$home" ]]; then
+        problems+=("$user:missing:$home")
+        continue
+      fi
+      owner=$(stat -Lc '%u' "$home") || {
+        problems+=("$user:unreadable:$home")
+        probe_error=1
+        continue
+      }
+      [[ "$owner" == "$uid" ]] || problems+=("$user:owner=$owner:expected=$uid:$home")
+    done </etc/passwd
+    if ((probe_error != 0)); then
+      printf '%s\n' "${problems[@]}"
+      exit 2
+    fi
+    [[ -z "${problems[*]}" ]] && {
+      printf '%s\n' 'Interactive home directories exist and are owned by their users'
+      exit 0
+    }
+    printf '%s\n' "${problems[@]}"
+    exit 1
+  args:
+    executable: /bin/bash
+  register: dfsa_id_003_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-003' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-003
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-003
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_id_003_probe.rc == 0
+        else ('error' if dfsa_id_003_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect one or more interactive-user home directories.'
+        if dfsa_id_003_probe.rc == 2
+        else 'Interactive users must have an existing home owned by their UID.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_id_003_probe.stdout | default(dfsa_id_003_probe.stderr, true) }}"
+  when: "'DFSA-ID-003' in dfsa_selected_ids"
+
+- name: Inspect local account database metadata
+  ansible.builtin.shell: |
+    failed=0
+    check_file() {
+      local path=$1 max_mode=$2 allowed_groups=$3
+      if [[ ! -e "$path" ]]; then
+        printf '%s\n' "$path:missing"
+        failed=1
+        return
+      fi
+      read -r mode owner group < <(stat -Lc '%a %U %G' "$path") || exit 2
+      mode_value=$((8#$mode))
+      max_value=$((8#$max_mode))
+      if [[ "$owner" != root ]] ||
+         [[ ! " $allowed_groups " =~ [[:space:]]$group[[:space:]] ]] ||
+         (( (mode_value & ~max_value) != 0 )); then
+        printf '%s mode=%s owner=%s group=%s\n' "$path" "$mode" "$owner" "$group"
+        failed=1
+      fi
+    }
+    check_file /etc/passwd 0644 'root'
+    check_file /etc/group 0644 'root'
+    check_file /etc/shadow 0640 'root shadow'
+    check_file /etc/gshadow 0640 'root shadow'
+    ((failed == 0)) && printf '%s\n' 'Account database ownership and modes are protective'
+    exit "$failed"
+  args:
+    executable: /bin/bash
+  register: dfsa_id_004_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-004' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-004
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-004
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_id_004_probe.rc == 0
+        else ('error' if dfsa_id_004_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: Account databases must be root-owned with no permissions beyond their safe maxima.
+    dfsa_record_evidence: "{{ dfsa_id_004_probe.stdout | default(dfsa_id_004_probe.stderr, true) }}"
+  when: "'DFSA-ID-004' in dfsa_selected_ids"
+
+- name: Inspect the privileged command path
+  ansible.builtin.shell: |
+    problems=()
+    probe_error=0
+    IFS=: read -ra entries <<<"$PATH"
+    for entry in "${entries[@]}"; do
+      if [[ -z "$entry" || "$entry" == . || "$entry" != /* ]]; then
+        problems+=("unsafe-entry:${entry:-empty}")
+        continue
+      fi
+      if [[ ! -d "$entry" ]]; then
+        problems+=("missing:$entry")
+        continue
+      fi
+      read -r mode owner < <(stat -Lc '%a %U' "$entry") || {
+        problems+=("unreadable:$entry")
+        probe_error=1
+        continue
+      }
+      mode_value=$((8#$mode))
+      [[ "$owner" == root ]] || problems+=("non-root-owner:$entry:$owner")
+      (( (mode_value & 0022) == 0 )) || problems+=("group-or-world-writable:$entry:$mode")
+    done
+    if ((probe_error != 0)); then
+      printf '%s\n' "${problems[@]}"
+      exit 2
+    fi
+    [[ -z "${problems[*]}" ]] && {
+      printf '%s\n' 'Privileged PATH entries are absolute, root-owned, and not broadly writable'
+      exit 0
+    }
+    printf '%s\n' "${problems[@]}"
+    exit 1
+  args:
+    executable: /bin/bash
+  register: dfsa_id_005_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-005' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-005
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-005
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_id_005_probe.rc == 0
+        else ('error' if dfsa_id_005_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect one or more privileged PATH entries.'
+        if dfsa_id_005_probe.rc == 2
+        else 'Privileged PATH entries must be absolute, root-owned, and not group/world writable.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_id_005_probe.stdout | default(dfsa_id_005_probe.stderr, true) }}"
+  when: "'DFSA-ID-005' in dfsa_selected_ids"
+
+- name: Inspect new-account password aging defaults  # noqa no-free-form
+  ansible.builtin.shell: |
+    max_days=$(awk '$1 == "PASS_MAX_DAYS" { print $2; exit }' /etc/login.defs)
+    min_days=$(awk '$1 == "PASS_MIN_DAYS" { print $2; exit }' /etc/login.defs)
+    warn_days=$(awk '$1 == "PASS_WARN_AGE" { print $2; exit }' /etc/login.defs)
+    printf 'max=%s min=%s warn=%s\n' "$max_days" "$min_days" "$warn_days"
+    [[ "$max_days" =~ ^[0-9]+$ && "$min_days" =~ ^[0-9]+$ &&
+       "$warn_days" =~ ^[0-9]+$ ]] || exit 2
+    ((max_days <= {{ dfsa_password_max_days | int }} &&
+      min_days >= {{ dfsa_password_min_days | int }} &&
+      warn_days >= {{ dfsa_password_warning_days | int }}))
+  args:
+    executable: /bin/bash
+  register: dfsa_id_006_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-006' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-006
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-006
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_id_006_probe.rc == 0
+        else ('error' if dfsa_id_006_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      New accounts require max days <= {{ dfsa_password_max_days }},
+      min days >= {{ dfsa_password_min_days }}, and warning days >=
+      {{ dfsa_password_warning_days }}.
+    dfsa_record_evidence: "{{ dfsa_id_006_probe.stdout | default(dfsa_id_006_probe.stderr, true) }}"
+  when: "'DFSA-ID-006' in dfsa_selected_ids"
+
+- name: Inspect inactive-account default
+  ansible.builtin.shell: |
+    set -o pipefail
+    inactive=$(/usr/sbin/useradd -D 2>/dev/null | awk -F= '$1 == "INACTIVE" { print $2 }')
+    printf 'inactive=%s\n' "$inactive"
+    [[ "$inactive" =~ ^-?[0-9]+$ ]] || exit 2
+    ((inactive >= 0 && inactive <= {{ dfsa_inactive_password_days | int }}))
+  args:
+    executable: /bin/bash
+  register: dfsa_id_007_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-007' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-007
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-007
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_id_007_probe.rc == 0
+        else ('error' if dfsa_id_007_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      useradd INACTIVE must be between 0 and
+      {{ dfsa_inactive_password_days }} days.
+    dfsa_record_evidence: "{{ dfsa_id_007_probe.stdout | default(dfsa_id_007_probe.stderr, true) }}"
+  when: "'DFSA-ID-007' in dfsa_selected_ids"
+
+- name: Inspect PAM password-quality configuration
+  ansible.builtin.shell: |
+    set -o pipefail
+    threshold={{ dfsa_password_min_length | int }}
+    common_password=/etc/pam.d/common-password
+    [[ -r "$common_password" ]] || {
+      printf '%s\n' 'Unable to read /etc/pam.d/common-password' >&2
+      exit 2
+    }
+
+    quality_output=$(
+      awk '
+        {
+          line=$0
+          sub(/[[:space:]]*#.*/, "", line)
+          if (line ~ /^[[:space:]]*password[[:space:]]/ &&
+              line ~ /pam_(pwquality|passwdqc)\.so([[:space:]]|$)/) {
+            print line
+          }
+        }
+      ' "$common_password"
+    ) || exit 2
+    if [[ -z "$quality_output" ]]; then
+      printf '%s\n' 'No supported password-quality PAM module in common-password'
+      exit 1
+    fi
+
+    read_pwquality_setting() {
+      local wanted=$1 fallback=$2
+      shopt -s nullglob
+      local files=(/etc/security/pwquality.conf.d/*.conf)
+      [[ -f /etc/security/pwquality.conf ]] &&
+        files+=(/etc/security/pwquality.conf)
+      if [[ -z "${files[*]}" ]]; then
+        printf '%s\n' "$fallback"
+        return
+      fi
+      awk -v wanted="$wanted" -v fallback="$fallback" '
+        {
+          line=$0
+          sub(/[[:space:]]*#.*/, "", line)
+          name=line
+          sub(/=.*/, "", name)
+          gsub(/[[:space:]]/, "", name)
+          if (tolower(name) == wanted && line ~ /=/) {
+            sub(/^[^=]*=/, "", line)
+            gsub(/[[:space:]]/, "", line)
+            value=line
+          }
+        }
+        END { print value == "" ? fallback : value }
+      ' "${files[@]}"
+    }
+
+    pam_module_exists() {
+      local module_name=$1
+      shopt -s nullglob
+      local module_paths=(
+        /lib/security/"$module_name"
+        /lib/*/security/"$module_name"
+        /lib64/security/"$module_name"
+        /usr/lib/security/"$module_name"
+        /usr/lib/*/security/"$module_name"
+        /usr/lib64/security/"$module_name"
+      )
+      [[ -n "${module_paths[*]}" ]]
+    }
+
+    quality_ok=0
+    probe_error=0
+    while IFS= read -r pam_line; do
+      if [[ ! "$pam_line" =~ ^[[:space:]]*password[[:space:]]+(required|requisite)[[:space:]] ]] &&
+         ! [[ "$pam_line" =~ ^[[:space:]]*password[[:space:]]+\[[^]]*default=(bad|die)[^]]*\] ]]; then
+        printf '%s\n' 'Password-quality module has a non-enforcing PAM control flag'
+        continue
+      fi
+
+      if [[ "$pam_line" == *pam_pwquality.so* ]]; then
+        if ! pam_module_exists pam_pwquality.so; then
+          printf '%s\n' 'pam_pwquality is configured but its module is absent'
+          continue
+        fi
+        if [[ "$pam_line" =~ (^|[[:space:]])minlen=([0-9]+)($|[[:space:]]) ]]; then
+          minlen=${BASH_REMATCH[2]}
+          source=module
+        else
+          minlen=$(read_pwquality_setting minlen 8) || {
+            printf '%s\n' 'Unable to read pwquality configuration' >&2
+            probe_error=1
+            continue
+          }
+          source=configuration
+        fi
+        if [[ "$pam_line" =~ (^|[[:space:]])enforcing=([01])($|[[:space:]]) ]]; then
+          enforcing=${BASH_REMATCH[2]}
+        else
+          enforcing=$(read_pwquality_setting enforcing 1) || {
+            printf '%s\n' 'Unable to read pwquality enforcement configuration' >&2
+            probe_error=1
+            continue
+          }
+        fi
+        if [[ ! "$minlen" =~ ^[0-9]{1,10}$ || ! "$enforcing" =~ ^[01]$ ]]; then
+          printf 'pam_pwquality has invalid minlen=%s enforcing=%s\n' \
+            "$minlen" "$enforcing"
+          probe_error=1
+          continue
+        fi
+        minlen_value=$((10#$minlen))
+        if ((minlen_value > 2147483647)); then
+          printf 'pam_pwquality has out-of-range minlen=%s\n' "$minlen"
+          probe_error=1
+          continue
+        fi
+        printf 'pam_pwquality minlen=%s source=%s enforcing=%s\n' \
+          "$minlen" "$source" "$enforcing"
+        ((minlen_value >= threshold && enforcing == 1)) && quality_ok=1
+        continue
+      fi
+
+      if ! pam_module_exists pam_passwdqc.so; then
+        printf '%s\n' 'pam_passwdqc is configured but its module is absent'
+        continue
+      fi
+      min_spec=
+      enforce_spec=everyone
+      source=
+      if [[ "$pam_line" =~ (^|[[:space:]])config=([^[:space:]]+) ]]; then
+        config_path=${BASH_REMATCH[2]}
+        if [[ ! -r "$config_path" ]]; then
+          printf 'Unable to read passwdqc configuration: %s\n' "$config_path" >&2
+          probe_error=1
+          continue
+        fi
+        config_values=$(
+          awk '
+            {
+              line=$0
+              sub(/[[:space:]]*#.*/, "", line)
+              name=line
+              sub(/=.*/, "", name)
+              gsub(/[[:space:]]/, "", name)
+              sub(/^[^=]*=/, "", line)
+              gsub(/[[:space:]]/, "", line)
+              if (tolower(name) == "min") {
+                minimum=line
+              } else if (tolower(name) == "enforce") {
+                enforcement=line
+              } else if (tolower(name) == "config") {
+                nested=line
+              }
+            }
+            END {
+              printf "%s\n%s\n%s\n", minimum, enforcement, nested
+            }
+          ' "$config_path"
+        ) || {
+          printf 'Unable to parse passwdqc configuration: %s\n' "$config_path" >&2
+          probe_error=1
+          continue
+        }
+        mapfile -t parsed_config <<<"$config_values"
+        if [[ -n "${parsed_config[2]}" ]]; then
+          printf '%s\n' 'Nested passwdqc configuration cannot be evaluated' >&2
+          probe_error=1
+          continue
+        fi
+        min_spec=${parsed_config[0]:-$min_spec}
+        enforce_spec=${parsed_config[1]:-$enforce_spec}
+        [[ -n "$min_spec" ]] && source=configuration
+      fi
+      if [[ "$pam_line" =~ (^|[[:space:]])min=([^[:space:]]+) ]]; then
+        min_spec=${BASH_REMATCH[2]}
+        source=module
+      fi
+      if [[ "$pam_line" =~ (^|[[:space:]])enforce=([^[:space:]]+) ]]; then
+        enforce_spec=${BASH_REMATCH[2]}
+      fi
+      if [[ -z "$min_spec" ]]; then
+        passwdqc_version=$(
+          dpkg-query -W -f='${Version}' libpam-passwdqc 2>/dev/null ||
+            dpkg-query -W -f='${Version}' passwdqc 2>/dev/null
+        ) || {
+          printf '%s\n' 'Unable to determine the installed passwdqc version' >&2
+          probe_error=1
+          continue
+        }
+        if dpkg --compare-versions "$passwdqc_version" ge 2.1; then
+          min_spec=disabled,24,11,8,8
+        else
+          min_spec=disabled,24,11,8,7
+        fi
+        source="default-$passwdqc_version"
+      fi
+
+      IFS=, read -ra minimums <<<"$min_spec"
+      minimum_count=0
+      for _minimum in "${minimums[@]}"; do
+        ((minimum_count += 1))
+      done
+      if ((minimum_count != 5)); then
+        printf 'pam_passwdqc has invalid min=%s\n' "$min_spec"
+        probe_error=1
+        continue
+      fi
+      weakest=
+      invalid=0
+      for minimum in "${minimums[@]}"; do
+        minimum=${minimum//[[:space:]]/}
+        [[ "$minimum" == disabled ]] && continue
+        if [[ ! "$minimum" =~ ^[0-9]{1,10}$ ]]; then
+          invalid=1
+          break
+        fi
+        minimum_value=$((10#$minimum))
+        if ((minimum_value > 2147483647)); then
+          invalid=1
+          break
+        fi
+        if [[ -z "$weakest" ]] || ((minimum_value < weakest)); then
+          weakest=$minimum_value
+        fi
+      done
+      if ((invalid != 0)) || [[ -z "$weakest" ]]; then
+        printf 'pam_passwdqc has invalid min=%s\n' "$min_spec"
+        probe_error=1
+        continue
+      fi
+      if [[ ! "$enforce_spec" =~ ^(none|users|everyone)$ ]]; then
+        printf 'pam_passwdqc has invalid enforce=%s\n' "$enforce_spec"
+        probe_error=1
+        continue
+      fi
+      printf 'pam_passwdqc weakest_minimum=%s source=%s enforce=%s\n' \
+        "$weakest" "$source" "$enforce_spec"
+      ((weakest >= threshold)) &&
+        [[ "$enforce_spec" == everyone ]] &&
+        quality_ok=1
+    done <<<"$quality_output"
+
+    ((probe_error == 0)) || exit 2
+    ((quality_ok == 1))
+  args:
+    executable: /bin/bash
+  register: dfsa_id_008_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-ID-008' in dfsa_selected_ids"
+
+- name: Record DFSA-ID-008
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-ID-008
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_id_008_probe.rc == 0
+        else ('error' if dfsa_id_008_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to evaluate the PAM password-quality configuration.'
+        if dfsa_id_008_probe.rc == 2
+        else (
+          'common-password must enforce pam_pwquality or pam_passwdqc for '
+          ~ 'password changes with a minimum length of at least '
+          ~ (dfsa_password_min_length | string)
+          ~ '.'
+        )
+      }}
+    dfsa_record_evidence: "{{ dfsa_id_008_probe.stdout | default(dfsa_id_008_probe.stderr, true) }}"
+  when: "'DFSA-ID-008' in dfsa_selected_ids"

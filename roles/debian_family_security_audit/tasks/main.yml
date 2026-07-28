@@ -1,0 +1,47 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Load and validate audit inputs
+  ansible.builtin.import_tasks: initialize.yml
+
+- name: Run filesystem controls
+  ansible.builtin.import_tasks: checks/filesystem.yml
+
+- name: Run package controls
+  ansible.builtin.import_tasks: checks/packages.yml
+
+- name: Run kernel controls
+  ansible.builtin.import_tasks: checks/kernel.yml
+
+- name: Run network controls
+  ansible.builtin.import_tasks: checks/network.yml
+
+- name: Run identity controls
+  ansible.builtin.import_tasks: checks/identity.yml
+
+- name: Run OpenSSH controls
+  ansible.builtin.import_tasks: checks/ssh.yml
+
+- name: Run logging controls
+  ansible.builtin.import_tasks: checks/logging.yml
+
+- name: Run service controls
+  ansible.builtin.import_tasks: checks/services.yml
+
+- name: Run trusted external control tasks
+  ansible.builtin.include_tasks: "{{ dfsa_external_task_file }}"
+  loop: "{{ dfsa_external_task_files }}"
+  loop_control:
+    loop_var: dfsa_external_task_file
+    label: "{{ dfsa_external_task_file }}"
+  when:
+    - dfsa_external_task_files | length > 0
+    - dfsa_selected_external_automated_ids | length > 0
+
+- name: Record manual-review controls
+  ansible.builtin.import_tasks: manual.yml
+
+- name: Complete the result set
+  ansible.builtin.import_tasks: finalize.yml
+
+- name: Write and summarize the audit report
+  ansible.builtin.import_tasks: report.yml

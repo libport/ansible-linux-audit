@@ -1,0 +1,10 @@
+---
+profile: production
+exclude_paths:
+  - .venv/
+  - artifacts/
+mock_roles: []
+skip_list:
+  # DFSA is the stable public API prefix; using the full role name would make
+  # every documented variable unnecessarily unwieldy.
+  - var-naming[no-role-prefix]

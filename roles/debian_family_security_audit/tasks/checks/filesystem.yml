@@ -1,0 +1,241 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Inspect shared-memory mount options
+  ansible.builtin.command:
+    argv: [findmnt, -n, -o, OPTIONS, /dev/shm]
+  register: dfsa_fs_001_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-FS-001' in dfsa_selected_ids"
+
+- name: Record DFSA-FS-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-FS-001
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_fs_001_probe.rc != 0
+        else (
+          'pass'
+          if ['nodev', 'nosuid', 'noexec']
+          | difference(dfsa_fs_001_probe.stdout.split(','))
+          | length == 0
+          else 'fail'
+        )
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect /dev/shm.'
+        if dfsa_fs_001_probe.rc != 0
+        else 'Required options are nodev, nosuid, and noexec.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_fs_001_probe.stdout | default(dfsa_fs_001_probe.stderr, true) }}"
+  when: "'DFSA-FS-001' in dfsa_selected_ids"
+
+- name: Find world-writable directories without the sticky bit
+  ansible.builtin.shell: |
+    set -o pipefail
+    mount_output=$(LC_ALL=C df --local --output=target) || {
+      printf '%s\n' 'Unable to enumerate local filesystems' >&2
+      exit 2
+    }
+    mapfile -t mountpoints < <(sed '1d' <<<"$mount_output")
+    [[ -n "${mountpoints[*]}" ]] || {
+      printf '%s\n' 'No local filesystems were returned by df' >&2
+      exit 2
+    }
+    probe_error=0
+    {
+      for mountpoint in "${mountpoints[@]}"; do
+        if [[ ! -d "$mountpoint" ]]; then
+          printf 'Mountpoint disappeared during inspection: %s\n' "$mountpoint" >&2
+          probe_error=1
+          continue
+        fi
+        find "$mountpoint" -xdev -type d -perm -0002 ! -perm -1000 -print 2>/dev/null || {
+          printf 'Unable to fully inspect: %s\n' "$mountpoint" >&2
+          probe_error=1
+        }
+      done
+      ((probe_error == 0)) || exit 2
+    } | awk '
+      NR <= 100 { print }
+      END {
+        if (NR > 100) {
+          printf "... %d additional findings omitted\n", NR - 100
+        }
+      }
+    '
+  args:
+    executable: /bin/bash
+  register: dfsa_fs_002_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - "'DFSA-FS-002' in dfsa_selected_ids"
+    - dfsa_run_heavy_checks | bool
+
+- name: Record DFSA-FS-002
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-FS-002
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_fs_002_probe.rc != 0
+        else ('pass' if dfsa_fs_002_probe.stdout | trim | length == 0 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect world-writable directories.'
+        if dfsa_fs_002_probe.rc != 0
+        else (
+          'No local world-writable directory is missing the sticky bit.'
+          if dfsa_fs_002_probe.stdout | trim | length == 0
+          else 'One or more local world-writable directories lack the sticky bit.'
+        )
+      }}
+    dfsa_record_evidence: "{{ dfsa_fs_002_probe.stdout | default(dfsa_fs_002_probe.stderr, true) }}"
+  when:
+    - "'DFSA-FS-002' in dfsa_selected_ids"
+    - dfsa_run_heavy_checks | bool
+
+- name: Record DFSA-FS-002 as skipped
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-FS-002
+    dfsa_record_status: skipped
+    dfsa_record_reason: Heavy filesystem checks were disabled by policy.
+    dfsa_record_evidence: Set dfsa_run_heavy_checks=true to execute this probe.
+  when:
+    - "'DFSA-FS-002' in dfsa_selected_ids"
+    - not (dfsa_run_heavy_checks | bool)
+
+- name: Find ownerless files on local filesystems
+  ansible.builtin.shell: |
+    set -o pipefail
+    mount_output=$(LC_ALL=C df --local --output=target) || {
+      printf '%s\n' 'Unable to enumerate local filesystems' >&2
+      exit 2
+    }
+    mapfile -t mountpoints < <(sed '1d' <<<"$mount_output")
+    [[ -n "${mountpoints[*]}" ]] || {
+      printf '%s\n' 'No local filesystems were returned by df' >&2
+      exit 2
+    }
+    probe_error=0
+    {
+      for mountpoint in "${mountpoints[@]}"; do
+        if [[ ! -d "$mountpoint" ]]; then
+          printf 'Mountpoint disappeared during inspection: %s\n' "$mountpoint" >&2
+          probe_error=1
+          continue
+        fi
+        find "$mountpoint" -xdev \( -nouser -o -nogroup \) -print 2>/dev/null || {
+          printf 'Unable to fully inspect: %s\n' "$mountpoint" >&2
+          probe_error=1
+        }
+      done
+      ((probe_error == 0)) || exit 2
+    } | awk '
+      NR <= 100 { print }
+      END {
+        if (NR > 100) {
+          printf "... %d additional findings omitted\n", NR - 100
+        }
+      }
+    '
+  args:
+    executable: /bin/bash
+  register: dfsa_fs_003_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - "'DFSA-FS-003' in dfsa_selected_ids"
+    - dfsa_run_heavy_checks | bool
+
+- name: Record DFSA-FS-003 check result
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-FS-003
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_fs_003_probe.rc != 0
+        else ('pass' if dfsa_fs_003_probe.stdout | trim | length == 0 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect filesystem ownership.'
+        if dfsa_fs_003_probe.rc != 0
+        else (
+          'No ownerless entries were found on local filesystems.'
+          if dfsa_fs_003_probe.stdout | trim | length == 0
+          else 'Ownerless or group-less entries were found.'
+        )
+      }}
+    dfsa_record_evidence: "{{ dfsa_fs_003_probe.stdout | default(dfsa_fs_003_probe.stderr, true) }}"
+  when:
+    - "'DFSA-FS-003' in dfsa_selected_ids"
+    - dfsa_run_heavy_checks | bool
+
+- name: Record DFSA-FS-003 as skipped
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-FS-003
+    dfsa_record_status: skipped
+    dfsa_record_reason: Heavy filesystem checks were disabled by policy.
+    dfsa_record_evidence: Set dfsa_run_heavy_checks=true to execute this probe.
+  when:
+    - "'DFSA-FS-003' in dfsa_selected_ids"
+    - not (dfsa_run_heavy_checks | bool)
+
+- name: Inspect dedicated temporary-storage mount options
+  ansible.builtin.command:
+    argv: [findmnt, -n, -o, OPTIONS, /tmp]
+  register: dfsa_fs_005_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-FS-005' in dfsa_selected_ids"
+
+- name: Record DFSA-FS-005
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-FS-005
+    dfsa_record_status: >-
+      {{
+        (
+          'fail'
+          if dfsa_fs_005_probe.rc == 1
+          else 'error'
+        )
+        if dfsa_fs_005_probe.rc != 0
+        else (
+          'pass'
+          if ['nodev', 'nosuid', 'noexec']
+          | difference(dfsa_fs_005_probe.stdout.split(','))
+          | length == 0
+          else 'fail'
+        )
+      }}
+    dfsa_record_reason: >-
+      /tmp must be a distinct mount with nodev, nosuid, and noexec.
+    dfsa_record_evidence: >-
+      {{
+        dfsa_fs_005_probe.stdout
+        if dfsa_fs_005_probe.rc == 0
+        else (
+          'No distinct /tmp mount was detected.'
+          if dfsa_fs_005_probe.rc == 1
+          else (
+            dfsa_fs_005_probe.stderr
+            | default(dfsa_fs_005_probe.msg, true)
+          )
+        )
+      }}
+  when: "'DFSA-FS-005' in dfsa_selected_ids"

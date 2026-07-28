@@ -1,0 +1,135 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Find installed legacy super-server packages
+  ansible.builtin.shell: |
+    set -o pipefail
+    dpkg-query -W -f='${binary:Package} ${db:Status-Abbrev}\n' 2>/dev/null |
+      awk '
+        $2 ~ /^ii/ && $1 ~ /^(inetutils-inetd|openbsd-inetd|xinetd)(:.*)?$/ {
+          print $1
+        }
+      '
+  args:
+    executable: /bin/bash
+  register: dfsa_svc_001_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-SVC-001' in dfsa_selected_ids"
+
+- name: Record DFSA-SVC-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SVC-001
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_svc_001_probe.rc != 0
+        else ('pass' if dfsa_svc_001_probe.stdout | trim | length == 0 else 'fail')
+      }}
+    dfsa_record_reason: inetd and xinetd implementations should not be installed.
+    dfsa_record_evidence: >-
+      {{
+        dfsa_svc_001_probe.stderr
+        if dfsa_svc_001_probe.rc != 0
+        else (
+          dfsa_svc_001_probe.stdout
+          if dfsa_svc_001_probe.stdout | trim | length > 0
+          else 'No matching installed packages.'
+        )
+      }}
+  when: "'DFSA-SVC-001' in dfsa_selected_ids"
+
+- name: Inspect multicast discovery service
+  ansible.builtin.command:
+    argv: [systemctl, is-active, avahi-daemon.service]
+  register: dfsa_svc_002_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - "'DFSA-SVC-002' in dfsa_selected_ids"
+    - "'avahi-daemon' not in dfsa_server_service_exceptions"
+
+- name: Record DFSA-SVC-002 result
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SVC-002
+    dfsa_record_status: >-
+      {{
+        'fail'
+        if dfsa_svc_002_probe.rc == 0
+        else (
+          'pass'
+          if dfsa_svc_002_probe.rc in [3, 4]
+          else 'error'
+        )
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to determine avahi-daemon.service state.'
+        if dfsa_svc_002_probe.rc not in [0, 3, 4]
+        else 'avahi-daemon.service must not be active on a general-purpose server.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_svc_002_probe.stdout | default(dfsa_svc_002_probe.stderr, true) }}"
+  when:
+    - "'DFSA-SVC-002' in dfsa_selected_ids"
+    - "'avahi-daemon' not in dfsa_server_service_exceptions"
+
+- name: Record DFSA-SVC-002 approved exception
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SVC-002
+    dfsa_record_status: not_applicable
+    dfsa_record_reason: avahi-daemon is an explicit server-role exception.
+    dfsa_record_evidence: dfsa_server_service_exceptions contains avahi-daemon
+  when:
+    - "'DFSA-SVC-002' in dfsa_selected_ids"
+    - "'avahi-daemon' in dfsa_server_service_exceptions"
+
+- name: Inspect printing service
+  ansible.builtin.command:
+    argv: [systemctl, is-active, cups.service]
+  register: dfsa_svc_003_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - "'DFSA-SVC-003' in dfsa_selected_ids"
+    - "'cups' not in dfsa_server_service_exceptions"
+
+- name: Record DFSA-SVC-003 result
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SVC-003
+    dfsa_record_status: >-
+      {{
+        'fail'
+        if dfsa_svc_003_probe.rc == 0
+        else (
+          'pass'
+          if dfsa_svc_003_probe.rc in [3, 4]
+          else 'error'
+        )
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to determine cups.service state.'
+        if dfsa_svc_003_probe.rc not in [0, 3, 4]
+        else 'cups.service must not be active on a general-purpose server.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_svc_003_probe.stdout | default(dfsa_svc_003_probe.stderr, true) }}"
+  when:
+    - "'DFSA-SVC-003' in dfsa_selected_ids"
+    - "'cups' not in dfsa_server_service_exceptions"
+
+- name: Record DFSA-SVC-003 approved exception
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-SVC-003
+    dfsa_record_status: not_applicable
+    dfsa_record_reason: cups is an explicit server-role exception.
+    dfsa_record_evidence: dfsa_server_service_exceptions contains cups
+  when:
+    - "'DFSA-SVC-003' in dfsa_selected_ids"
+    - "'cups' in dfsa_server_service_exceptions"

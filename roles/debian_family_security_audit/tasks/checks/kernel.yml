@@ -1,0 +1,190 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Inspect address-space randomization
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, kernel.randomize_va_space]
+  register: dfsa_krn_001_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-001' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-001
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_krn_001_probe.rc != 0
+        else ('pass' if dfsa_krn_001_probe.stdout | trim == '2' else 'fail')
+      }}
+    dfsa_record_reason: kernel.randomize_va_space must equal 2.
+    dfsa_record_evidence: "{{ dfsa_krn_001_probe.stdout | default(dfsa_krn_001_probe.stderr, true) }}"
+  when: "'DFSA-KRN-001' in dfsa_selected_ids"
+
+- name: Inspect kernel message restriction
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, kernel.dmesg_restrict]
+  register: dfsa_krn_002_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-002' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-002
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-002
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_krn_002_probe.rc != 0
+        else ('pass' if dfsa_krn_002_probe.stdout | trim == '1' else 'fail')
+      }}
+    dfsa_record_reason: kernel.dmesg_restrict must equal 1.
+    dfsa_record_evidence: "{{ dfsa_krn_002_probe.stdout | default(dfsa_krn_002_probe.stderr, true) }}"
+  when: "'DFSA-KRN-002' in dfsa_selected_ids"
+
+- name: Inspect kernel pointer restriction
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, kernel.kptr_restrict]
+  register: dfsa_krn_003_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-003' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-003
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-003
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_krn_003_probe.rc != 0
+        else ('pass' if dfsa_krn_003_probe.stdout | int >= 1 else 'fail')
+      }}
+    dfsa_record_reason: kernel.kptr_restrict must be at least 1.
+    dfsa_record_evidence: "{{ dfsa_krn_003_probe.stdout | default(dfsa_krn_003_probe.stderr, true) }}"
+  when: "'DFSA-KRN-003' in dfsa_selected_ids"
+
+- name: Inspect process tracing restriction
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, kernel.yama.ptrace_scope]
+  register: dfsa_krn_004_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-004' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-004
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-004
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_krn_004_probe.rc != 0
+        else ('pass' if dfsa_krn_004_probe.stdout | int >= 1 else 'fail')
+      }}
+    dfsa_record_reason: kernel.yama.ptrace_scope must be at least 1.
+    dfsa_record_evidence: "{{ dfsa_krn_004_probe.stdout | default(dfsa_krn_004_probe.stderr, true) }}"
+  when: "'DFSA-KRN-004' in dfsa_selected_ids"
+
+- name: Inspect unprivileged BPF restriction
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, kernel.unprivileged_bpf_disabled]
+  register: dfsa_krn_005_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-005' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-005
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-005
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_krn_005_probe.rc != 0
+        else ('pass' if dfsa_krn_005_probe.stdout | int >= 1 else 'fail')
+      }}
+    dfsa_record_reason: kernel.unprivileged_bpf_disabled must be at least 1.
+    dfsa_record_evidence: "{{ dfsa_krn_005_probe.stdout | default(dfsa_krn_005_probe.stderr, true) }}"
+  when: "'DFSA-KRN-005' in dfsa_selected_ids"
+
+- name: Inspect privileged core-dump behavior
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, fs.suid_dumpable]
+  register: dfsa_krn_006_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-006' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-006
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-006
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_krn_006_probe.rc != 0
+        else ('pass' if dfsa_krn_006_probe.stdout | trim == '0' else 'fail')
+      }}
+    dfsa_record_reason: fs.suid_dumpable must equal 0.
+    dfsa_record_evidence: "{{ dfsa_krn_006_probe.stdout | default(dfsa_krn_006_probe.stderr, true) }}"
+  when: "'DFSA-KRN-006' in dfsa_selected_ids"
+
+- name: Inspect protected link handling
+  ansible.builtin.shell: |
+    hardlinks=$(/usr/sbin/sysctl -n fs.protected_hardlinks) || exit 2
+    symlinks=$(/usr/sbin/sysctl -n fs.protected_symlinks) || exit 2
+    printf 'hardlinks=%s symlinks=%s\n' "$hardlinks" "$symlinks"
+    [[ "$hardlinks" == 1 && "$symlinks" == 1 ]]
+  args:
+    executable: /bin/bash
+  register: dfsa_krn_007_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-007' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-007
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-007
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_krn_007_probe.rc == 0
+        else ('error' if dfsa_krn_007_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: fs.protected_hardlinks and fs.protected_symlinks must both equal 1.
+    dfsa_record_evidence: "{{ dfsa_krn_007_probe.stdout | default(dfsa_krn_007_probe.stderr, true) }}"
+  when: "'DFSA-KRN-007' in dfsa_selected_ids"
+
+- name: Inspect performance event restriction
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, kernel.perf_event_paranoid]
+  register: dfsa_krn_008_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-KRN-008' in dfsa_selected_ids"
+
+- name: Record DFSA-KRN-008
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-KRN-008
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_krn_008_probe.rc != 0
+        else ('pass' if dfsa_krn_008_probe.stdout | int >= 2 else 'fail')
+      }}
+    dfsa_record_reason: kernel.perf_event_paranoid must be at least 2.
+    dfsa_record_evidence: "{{ dfsa_krn_008_probe.stdout | default(dfsa_krn_008_probe.stderr, true) }}"
+  when: "'DFSA-KRN-008' in dfsa_selected_ids"

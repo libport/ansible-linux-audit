@@ -1,0 +1,29 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Find controls without results
+  ansible.builtin.set_fact:
+    dfsa_missing_control_ids: >-
+      {{
+        dfsa_selected_ids
+        | difference(dfsa_results | map(attribute='id') | list)
+      }}
+
+- name: Record missing implementation as an error
+  ansible.builtin.include_tasks: record_result.yml
+  vars:
+    dfsa_record_control_id: "{{ dfsa_missing_control_id }}"
+    dfsa_record_status: error
+    dfsa_record_reason: No trusted check task recorded a result for this selected control.
+    dfsa_record_evidence: >-
+      Add an automated extension task or correct the control handler.
+  loop: "{{ dfsa_missing_control_ids }}"
+  loop_control:
+    loop_var: dfsa_missing_control_id
+    label: "{{ dfsa_missing_control_id }}"
+
+- name: Verify complete unique result set
+  ansible.builtin.assert:
+    that:
+      - dfsa_results | length == dfsa_selected_ids | length
+      - dfsa_results | map(attribute='id') | unique | length == dfsa_results | length
+    fail_msg: Every selected control must produce exactly one result.

@@ -1,0 +1,156 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Inspect active time synchronization
+  ansible.builtin.shell: |
+    synchronized=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)
+    if [[ "$synchronized" == yes ]]; then
+      printf '%s\n' 'timedatectl reports NTPSynchronized=yes'
+      exit 0
+    fi
+    for unit in \
+      systemd-timesyncd.service \
+      chrony.service \
+      chronyd.service \
+      ntp.service \
+      ntpsec.service \
+      openntpd.service; do
+      if systemctl is-active --quiet "$unit"; then
+        printf '%s\n' "$unit is active; current synchronization=$synchronized"
+        exit 0
+      fi
+    done
+    printf 'No active time synchronization service; synchronized=%s\n' "$synchronized"
+    exit 1
+  args:
+    executable: /bin/bash
+  register: dfsa_log_001_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-LOG-001' in dfsa_selected_ids"
+
+- name: Record DFSA-LOG-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-LOG-001
+    dfsa_record_status: "{{ 'pass' if dfsa_log_001_probe.rc == 0 else 'fail' }}"
+    dfsa_record_reason: A recognized synchronization service must be active.
+    dfsa_record_evidence: "{{ dfsa_log_001_probe.stdout | default(dfsa_log_001_probe.stderr, true) }}"
+  when: "'DFSA-LOG-001' in dfsa_selected_ids"
+
+- name: Inspect journal persistence
+  ansible.builtin.shell: |
+    journal_config=$(systemd-analyze cat-config systemd/journald.conf 2>&1) || {
+      printf '%s\n' "$journal_config" >&2
+      exit 2
+    }
+    storage=$(
+      awk -F= '
+        /^[[:space:]]*Storage[[:space:]]*=/ {
+          value=$2
+          gsub(/[[:space:]]/, "", value)
+        }
+        END { print tolower(value) }
+      ' <<<"$journal_config"
+    ) || exit 2
+    storage=${storage:-auto}
+    printf 'storage=%s persistent_directory=%s\n' \
+      "$storage" "$([[ -d /var/log/journal ]] && echo present || echo absent)"
+    [[ "$storage" == persistent ]] && exit 0
+    [[ "$storage" == auto && -d /var/log/journal ]] && exit 0
+    exit 1
+  args:
+    executable: /bin/bash
+  register: dfsa_log_002_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-LOG-002' in dfsa_selected_ids"
+
+- name: Record DFSA-LOG-002
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-LOG-002
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_log_002_probe.rc == 0
+        else ('error' if dfsa_log_002_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to evaluate the effective journald configuration.'
+        if dfsa_log_002_probe.rc == 2
+        else 'Journald must use persistent storage explicitly or through auto with /var/log/journal.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_log_002_probe.stdout | default(dfsa_log_002_probe.stderr, true) }}"
+  when: "'DFSA-LOG-002' in dfsa_selected_ids"
+
+- name: Inspect Linux audit daemon
+  ansible.builtin.shell: |
+    set -o pipefail
+    if ! systemctl list-unit-files auditd.service --no-legend 2>/dev/null |
+      grep -q '^auditd\.service'; then
+      printf '%s\n' 'auditd.service is not installed'
+      exit 1
+    fi
+    enabled=$(systemctl is-enabled auditd.service 2>/dev/null || true)
+    active=$(systemctl is-active auditd.service 2>/dev/null || true)
+    printf 'enabled=%s active=%s\n' "$enabled" "$active"
+    [[ "$enabled" == enabled && "$active" == active ]]
+  args:
+    executable: /bin/bash
+  register: dfsa_log_003_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-LOG-003' in dfsa_selected_ids"
+
+- name: Record DFSA-LOG-003
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-LOG-003
+    dfsa_record_status: "{{ 'pass' if dfsa_log_003_probe.rc == 0 else 'fail' }}"
+    dfsa_record_reason: auditd.service must be installed, enabled, and active.
+    dfsa_record_evidence: "{{ dfsa_log_003_probe.stdout | default(dfsa_log_003_probe.stderr, true) }}"
+  when: "'DFSA-LOG-003' in dfsa_selected_ids"
+
+- name: Inspect log rotation scheduling
+  ansible.builtin.shell: |
+    if ! command -v logrotate >/dev/null 2>&1; then
+      printf '%s\n' 'logrotate is not installed'
+      exit 1
+    fi
+    if systemctl is-enabled --quiet logrotate.timer 2>/dev/null; then
+      printf '%s\n' 'logrotate.timer is enabled'
+      exit 0
+    fi
+    if [[ -x /etc/cron.daily/logrotate ]]; then
+      if systemctl is-enabled --quiet cron.service 2>/dev/null ||
+         systemctl is-active --quiet cron.service 2>/dev/null ||
+         systemctl is-enabled --quiet anacron.timer 2>/dev/null ||
+         systemctl is-active --quiet anacron.timer 2>/dev/null; then
+        printf '%s\n' '/etc/cron.daily/logrotate has an active scheduler'
+        exit 0
+      fi
+      printf '%s\n' '/etc/cron.daily/logrotate exists without an active scheduler'
+      exit 1
+    fi
+    printf '%s\n' 'No enabled logrotate timer or scheduled daily cron entry'
+    exit 1
+  args:
+    executable: /bin/bash
+  register: dfsa_log_005_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-LOG-005' in dfsa_selected_ids"
+
+- name: Record DFSA-LOG-005
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-LOG-005
+    dfsa_record_status: "{{ 'pass' if dfsa_log_005_probe.rc == 0 else 'fail' }}"
+    dfsa_record_reason: Logrotate must be installed and scheduled by systemd or cron.
+    dfsa_record_evidence: "{{ dfsa_log_005_probe.stdout | default(dfsa_log_005_probe.stderr, true) }}"
+  when: "'DFSA-LOG-005' in dfsa_selected_ids"

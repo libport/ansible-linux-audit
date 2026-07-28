@@ -1,0 +1,182 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Simulate package upgrade resolution
+  ansible.builtin.shell: |
+    set -o pipefail
+    LC_ALL=C apt-get -s -o Debug::NoLocking=1 upgrade |
+      awk '/^Inst / { print $2 }'
+  args:
+    executable: /bin/bash
+  register: dfsa_pkg_001_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-PKG-001' in dfsa_selected_ids"
+
+- name: Record DFSA-PKG-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-PKG-001
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_pkg_001_probe.rc != 0
+        else ('pass' if dfsa_pkg_001_probe.stdout | trim | length == 0 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Package simulation failed.'
+        if dfsa_pkg_001_probe.rc != 0
+        else (
+          'No upgrades are visible in the current APT metadata.'
+          if dfsa_pkg_001_probe.stdout | trim | length == 0
+          else 'APT reports packages that can be upgraded.'
+        )
+      }}
+    dfsa_record_evidence: "{{ dfsa_pkg_001_probe.stdout | default(dfsa_pkg_001_probe.stderr, true) }}"
+  when: "'DFSA-PKG-001' in dfsa_selected_ids"
+
+- name: Inspect automatic package update scheduling
+  ansible.builtin.shell: |
+    if systemctl is-enabled --quiet apt-daily.timer &&
+       systemctl is-enabled --quiet apt-daily-upgrade.timer; then
+      printf '%s\n' 'apt-daily.timer and apt-daily-upgrade.timer are enabled'
+      exit 0
+    fi
+    systemctl is-enabled apt-daily.timer apt-daily-upgrade.timer 2>&1 || true
+    exit 1
+  args:
+    executable: /bin/bash
+  register: dfsa_pkg_002_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-PKG-002' in dfsa_selected_ids"
+
+- name: Record DFSA-PKG-002
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-PKG-002
+    dfsa_record_status: "{{ 'pass' if dfsa_pkg_002_probe.rc == 0 else 'fail' }}"
+    dfsa_record_reason: Both standard APT update timers must be enabled.
+    dfsa_record_evidence: "{{ dfsa_pkg_002_probe.stdout | default(dfsa_pkg_002_probe.stderr, true) }}"
+  when: "'DFSA-PKG-002' in dfsa_selected_ids"
+
+- name: Search APT sources for signature-verification bypasses
+  ansible.builtin.shell: |
+    set -o pipefail
+    source_output=$(
+      find /etc/apt -maxdepth 2 -type f \
+        \( -name '*.list' -o -name '*.sources' \) -print 2>/dev/null
+    ) || {
+      printf '%s\n' 'Unable to enumerate APT source files' >&2
+      exit 2
+    }
+    if [[ -z "$source_output" ]]; then
+      printf '%s\n' 'No APT source files were found'
+      exit 2
+    fi
+    mapfile -t source_files <<<"$source_output"
+    matches=$(
+      awk '
+        BEGIN {
+          bypass = "(trusted|allow-insecure|allow-weak|"
+          bypass = bypass "allow-downgrade-to-insecure)"
+          bypass = bypass "[[:space:]]*[:=][[:space:]]*(yes|true|1|on|enabled|enable)"
+          bypass = bypass "([^[:alnum:]_-]|$)"
+        }
+        {
+          line=tolower($0)
+          sub(/[[:space:]]*#.*/, "", line)
+          if (line ~ bypass) {
+            findings++
+            if (findings <= 100) {
+              printf "%s:%d: signature trust bypass enabled\n", FILENAME, FNR
+            }
+          }
+        }
+        END {
+          if (findings > 100) {
+            printf "... %d additional findings omitted\n", findings - 100
+          }
+        }
+      ' "${source_files[@]}"
+    ) || {
+      printf '%s\n' 'Unable to read one or more APT source files' >&2
+      exit 2
+    }
+    if [[ -n "$matches" ]]; then
+      printf '%s\n' "$matches"
+      exit 1
+    fi
+    printf '%s\n' 'No source-level signature trust bypass was found'
+  args:
+    executable: /bin/bash
+  register: dfsa_pkg_003_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-PKG-003' in dfsa_selected_ids"
+
+- name: Record DFSA-PKG-003
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-PKG-003
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_pkg_003_probe.rc == 0
+        else ('fail' if dfsa_pkg_003_probe.rc == 1 else 'error')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect all APT source definitions.'
+        if dfsa_pkg_003_probe.rc not in [0, 1]
+        else (
+          'APT source definitions must not enable trusted, allow-insecure, '
+          ~ 'allow-weak, or allow-downgrade-to-insecure overrides.'
+        )
+      }}
+    dfsa_record_evidence: "{{ dfsa_pkg_003_probe.stdout | default(dfsa_pkg_003_probe.stderr, true) }}"
+  when: "'DFSA-PKG-003' in dfsa_selected_ids"
+
+- name: Find installed clear-text remote login servers
+  ansible.builtin.shell: |
+    set -o pipefail
+    dpkg-query -W -f='${binary:Package} ${db:Status-Abbrev}\n' 2>/dev/null |
+      awk '
+        $2 ~ /^ii/ &&
+        $1 ~ /^(telnetd|inetutils-telnetd|rsh-server|rsh-redone-server)(:.*)?$/ {
+          print $1
+        }
+      '
+  args:
+    executable: /bin/bash
+  register: dfsa_pkg_004_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-PKG-004' in dfsa_selected_ids"
+
+- name: Record DFSA-PKG-004
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-PKG-004
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_pkg_004_probe.rc != 0
+        else ('pass' if dfsa_pkg_004_probe.stdout | trim | length == 0 else 'fail')
+      }}
+    dfsa_record_reason: No Telnet or rsh-compatible server package should be installed.
+    dfsa_record_evidence: >-
+      {{
+        dfsa_pkg_004_probe.stderr
+        if dfsa_pkg_004_probe.rc != 0
+        else (
+          dfsa_pkg_004_probe.stdout
+          if dfsa_pkg_004_probe.stdout | trim | length > 0
+          else 'No matching installed packages.'
+        )
+      }}
+  when: "'DFSA-PKG-004' in dfsa_selected_ids"

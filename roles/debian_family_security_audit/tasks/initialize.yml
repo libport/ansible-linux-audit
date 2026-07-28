@@ -1,0 +1,359 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Validate supported target and audit inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "Debian"
+      - ansible_facts.service_mgr == "systemd"
+      - >-
+        (ansible_facts.virtualization_type | default('unknown'))
+        not in [
+          "chroot",
+          "container",
+          "containerd",
+          "docker",
+          "lxc",
+          "openvz",
+          "podman",
+          "systemd-nspawn"
+        ]
+      - >-
+        dfsa_profile is string
+        and dfsa_profile in dfsa_internal_valid_profiles
+      - >-
+        dfsa_host_network_role is string
+        and dfsa_host_network_role in ["endpoint", "router"]
+      - dfsa_include_controls is sequence and dfsa_include_controls is not string
+      - dfsa_exclude_controls is sequence and dfsa_exclude_controls is not string
+      - dfsa_sections is sequence and dfsa_sections is not string
+      - >-
+        dfsa_server_service_exceptions is sequence
+        and dfsa_server_service_exceptions is not string
+      - >-
+        dfsa_external_catalog_path is string
+        and (
+          dfsa_external_catalog_path | length == 0
+          or dfsa_external_catalog_path is match('^/')
+        )
+      - dfsa_report_dir is string and dfsa_report_dir | trim | length > 0
+      - >-
+        (dfsa_fail_on_noncompliance | string | lower)
+        in ["true", "false", "yes", "no", "1", "0", "on", "off"]
+      - >-
+        (dfsa_run_heavy_checks | string | lower)
+        in ["true", "false", "yes", "no", "1", "0", "on", "off"]
+      - >-
+        (dfsa_password_max_days | string) is match('^[0-9]{1,10}$')
+        and dfsa_password_max_days | int >= 1
+        and dfsa_password_max_days | int <= 2147483647
+      - >-
+        (dfsa_password_min_days | string) is match('^[0-9]{1,10}$')
+        and dfsa_password_min_days | int >= 0
+        and dfsa_password_min_days | int <= 2147483647
+      - >-
+        (dfsa_password_warning_days | string) is match('^[0-9]{1,10}$')
+        and dfsa_password_warning_days | int >= 0
+        and dfsa_password_warning_days | int <= 2147483647
+      - >-
+        (dfsa_inactive_password_days | string) is match('^[0-9]{1,10}$')
+        and dfsa_inactive_password_days | int >= 0
+        and dfsa_inactive_password_days | int <= 2147483647
+      - >-
+        (dfsa_password_min_length | string) is match('^[0-9]{1,10}$')
+        and dfsa_password_min_length | int >= 1
+        and dfsa_password_min_length | int <= 2147483647
+      - >-
+        (dfsa_sshd_max_auth_tries | string) is match('^[0-9]{1,10}$')
+        and dfsa_sshd_max_auth_tries | int >= 1
+        and dfsa_sshd_max_auth_tries | int <= 2147483647
+      - dfsa_password_min_days | int <= dfsa_password_max_days | int
+      - dfsa_password_warning_days | int <= dfsa_password_max_days | int
+    fail_msg: >-
+      DFSA requires a systemd-based Debian-family host and valid scalar and
+      list-valued inputs. Profile={{ dfsa_profile | default('unknown') }},
+      os_family={{ ansible_facts.os_family | default('unknown') }},
+      service_mgr={{ ansible_facts.service_mgr | default('unknown') }},
+      virtualization_type={{
+      ansible_facts.virtualization_type | default('unknown') }}.
+
+- name: Validate control and section filter entries
+  ansible.builtin.assert:
+    that:
+      - >-
+        item['values']
+        | select('string')
+        | list
+        | length
+        == item['values'] | length
+      - item['values'] | select('equalto', '') | list | length == 0
+      - >-
+        item['values']
+        | unique
+        | list
+        | length
+        == item['values'] | length
+    fail_msg: "{{ item.name }} must contain unique, non-empty strings."
+  loop:
+    - name: dfsa_include_controls
+      values: "{{ dfsa_include_controls }}"
+    - name: dfsa_exclude_controls
+      values: "{{ dfsa_exclude_controls }}"
+    - name: dfsa_sections
+      values: "{{ dfsa_sections }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Validate server service exceptions
+  ansible.builtin.assert:
+    that:
+      - >-
+        dfsa_server_service_exceptions
+        | select('string')
+        | list
+        | length
+        == dfsa_server_service_exceptions | length
+      - >-
+        dfsa_server_service_exceptions
+        | select('equalto', '')
+        | list
+        | length
+        == 0
+      - >-
+        dfsa_server_service_exceptions
+        | unique
+        | list
+        | length
+        == dfsa_server_service_exceptions | length
+      - >-
+        dfsa_server_service_exceptions
+        | difference(["avahi-daemon", "cups"])
+        | length
+        == 0
+    fail_msg: >-
+      dfsa_server_service_exceptions accepts only unique entries named
+      avahi-daemon or cups.
+
+- name: Load trusted external catalog
+  ansible.builtin.include_vars:
+    file: "{{ dfsa_external_catalog_path }}"
+    name: dfsa_external_catalog_data
+  when: dfsa_external_catalog_path | length > 0
+  no_log: true
+
+- name: Validate external catalog container
+  ansible.builtin.assert:
+    that:
+      - dfsa_external_catalog_data is mapping
+    fail_msg: External catalog must be a YAML mapping.
+  when: dfsa_external_catalog_path | length > 0
+  no_log: true
+
+- name: Validate external catalog fields
+  ansible.builtin.assert:
+    that:
+      - >-
+        dfsa_external_catalog_data.keys()
+        | difference(["controls", "task_files"])
+        | length
+        == 0
+      - dfsa_external_catalog_data.controls is defined
+      - dfsa_external_catalog_data.controls is sequence
+      - dfsa_external_catalog_data.controls is not string
+      - >-
+        dfsa_external_catalog_data.task_files | default([]) is sequence
+      - >-
+        dfsa_external_catalog_data.task_files | default([]) is not string
+    fail_msg: >-
+      External catalog may contain only controls and task_files; controls is
+      required and both values must be lists.
+  when: dfsa_external_catalog_path | length > 0
+  no_log: true
+
+- name: Normalize catalog inputs
+  ansible.builtin.set_fact:
+    dfsa_external_controls: >-
+      {{
+        (dfsa_external_catalog_data | default({})).controls
+        | default([])
+      }}
+    dfsa_external_task_files: >-
+      {{
+        (dfsa_external_catalog_data | default({})).task_files
+        | default([])
+      }}
+    dfsa_catalog: >-
+      {{
+        dfsa_builtin_catalog
+        + (
+          (dfsa_external_catalog_data | default({})).controls
+          | default([])
+        )
+      }}
+    dfsa_results: []
+    dfsa_selected_controls: []
+    dfsa_started_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%S.%fZ') }}"
+
+- name: Validate external controls are mappings
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+    fail_msg: External catalog controls must be mappings.
+  loop: "{{ dfsa_external_controls }}"
+  loop_control:
+    label: "{{ item.id | default('invalid control') }}"
+  no_log: true
+
+- name: Validate each external catalog record
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.keys()
+        | difference(
+          [
+            "id",
+            "title",
+            "section",
+            "profiles",
+            "assessment",
+            "scored",
+            "handler",
+            "rationale",
+            "references",
+            "manual_guidance"
+          ]
+        )
+        | length
+        == 0
+      - >-
+        item.id is string
+        and item.id is match('^[A-Za-z0-9][A-Za-z0-9_.-]+$')
+      - item.title is string and item.title | trim | length > 0
+      - item.section is string and item.section | trim | length > 0
+      - >-
+        item.profiles is sequence
+        and item.profiles is not string
+        and item.profiles | length > 0
+      - item.profiles | select('string') | list | length == item.profiles | length
+      - item.profiles | unique | list | length == item.profiles | length
+      - item.profiles | difference(dfsa_internal_valid_profiles) | length == 0
+      - item.assessment in ["automated", "manual"]
+      - item.scored is boolean
+      - item.handler is string and item.handler | trim | length > 0
+      - item.rationale is string and item.rationale | trim | length > 0
+      - >-
+        item.references is sequence
+        and item.references is not string
+        and item.references | length > 0
+      - >-
+        item.assessment != "manual"
+        or (
+          item.manual_guidance is defined
+          and item.manual_guidance is string
+          and item.manual_guidance | trim | length > 0
+        )
+      - item.assessment != "manual" or item.handler == "manual"
+      - item.assessment != "manual" or not item.scored
+    fail_msg: "Invalid catalog record: {{ item.id | default('missing id') }}"
+  loop: "{{ dfsa_external_controls }}"
+  loop_control:
+    label: "{{ item.id | default('missing id') }}"
+  no_log: true
+
+- name: Validate external control references
+  ansible.builtin.assert:
+    that:
+      - item.1 is string
+      - item.1 is match('^[A-Za-z][A-Za-z0-9+.-]*:')
+    fail_msg: External control references must be absolute URI strings.
+  loop: "{{ dfsa_external_controls | subelements('references') }}"
+  loop_control:
+    label: "{{ item.0.id | default('missing id') }}"
+  no_log: true
+
+- name: Validate external reference uniqueness
+  ansible.builtin.assert:
+    that:
+      - item.references | unique | list | length == item.references | length
+    fail_msg: "External control repeats a reference: {{ item.id }}"
+  loop: "{{ dfsa_external_controls }}"
+  loop_control:
+    label: "{{ item.id }}"
+  no_log: true
+
+- name: Validate external task paths
+  ansible.builtin.assert:
+    that:
+      - item is string and item | length > 0
+      - item is match('^/')
+    fail_msg: External task files must use absolute controller paths.
+  loop: "{{ dfsa_external_task_files }}"
+  no_log: true
+
+- name: Validate external task path uniqueness
+  ansible.builtin.assert:
+    that:
+      - >-
+        dfsa_external_task_files
+        | unique
+        | list
+        | length
+        == dfsa_external_task_files | length
+    fail_msg: External task files must not contain duplicates.
+  no_log: true
+
+- name: Derive catalog dimensions
+  ansible.builtin.set_fact:
+    dfsa_catalog_ids: "{{ dfsa_catalog | map(attribute='id') | list }}"
+    dfsa_catalog_sections: "{{ dfsa_catalog | map(attribute='section') | unique | list }}"
+
+- name: Initialize selected-profile control index
+  ansible.builtin.set_fact:
+    dfsa_profile_control_ids: []
+
+- name: Index controls belonging to the selected profile
+  ansible.builtin.set_fact:
+    dfsa_profile_control_ids: "{{ dfsa_profile_control_ids + [item.id] }}"
+  loop: "{{ dfsa_catalog }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when: dfsa_profile in item.profiles
+
+- name: Validate catalog uniqueness and filters
+  ansible.builtin.assert:
+    that:
+      - dfsa_catalog_ids | unique | length == dfsa_catalog_ids | length
+      - dfsa_include_controls | difference(dfsa_catalog_ids) | length == 0
+      - dfsa_include_controls | difference(dfsa_profile_control_ids) | length == 0
+      - dfsa_exclude_controls | difference(dfsa_catalog_ids) | length == 0
+      - dfsa_sections | difference(dfsa_catalog_sections) | length == 0
+      - dfsa_include_controls | intersect(dfsa_exclude_controls) | length == 0
+    fail_msg: >-
+      Catalog IDs must be unique; filters may reference only known controls
+      and sections; included controls must belong to the selected profile; and
+      include/exclude filters must not overlap.
+
+- name: Select controls for this audit
+  ansible.builtin.set_fact:
+    dfsa_selected_controls: "{{ dfsa_selected_controls + [item] }}"
+  when:
+    - dfsa_profile in item.profiles
+    - dfsa_include_controls | length == 0 or item.id in dfsa_include_controls
+    - dfsa_sections | length == 0 or item.section in dfsa_sections
+    - item.id not in dfsa_exclude_controls
+  loop: "{{ dfsa_catalog }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Index selected controls
+  ansible.builtin.set_fact:
+    dfsa_selected_ids: "{{ dfsa_selected_controls | map(attribute='id') | list }}"
+    dfsa_selected_external_automated_ids: >-
+      {{
+        (
+          dfsa_selected_controls
+          | selectattr('assessment', 'equalto', 'automated')
+          | map(attribute='id')
+          | list
+        )
+        | intersect(dfsa_external_controls | map(attribute='id') | list)
+      }}

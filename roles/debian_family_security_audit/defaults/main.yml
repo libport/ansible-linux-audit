@@ -1,0 +1,19 @@
+---
+# SPDX-License-Identifier: MIT
+dfsa_profile: standard_server
+dfsa_include_controls: []
+dfsa_exclude_controls: []
+dfsa_sections: []
+dfsa_report_dir: "{{ playbook_dir }}/artifacts"
+dfsa_fail_on_noncompliance: false
+dfsa_run_heavy_checks: true
+dfsa_host_network_role: endpoint
+dfsa_server_service_exceptions: []
+dfsa_external_catalog_path: ""
+
+dfsa_password_max_days: 365
+dfsa_password_min_days: 1
+dfsa_password_warning_days: 14
+dfsa_inactive_password_days: 30
+dfsa_password_min_length: 14
+dfsa_sshd_max_auth_tries: 4

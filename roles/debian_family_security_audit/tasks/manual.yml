@@ -1,0 +1,18 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Add manual-review result
+  ansible.builtin.include_tasks: record_result.yml
+  vars:
+    dfsa_record_control_id: "{{ dfsa_manual_control.id }}"
+    dfsa_record_status: manual_review
+    dfsa_record_reason: Assessment requires organizational context or assessor judgment.
+    dfsa_record_evidence: "{{ dfsa_manual_control.manual_guidance }}"
+  loop: >-
+    {{
+      dfsa_selected_controls
+      | selectattr('assessment', 'equalto', 'manual')
+      | list
+    }}
+  loop_control:
+    loop_var: dfsa_manual_control
+    label: "{{ dfsa_manual_control.id }}"

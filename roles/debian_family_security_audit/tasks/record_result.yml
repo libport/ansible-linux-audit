@@ -1,0 +1,61 @@
+---
+# SPDX-License-Identifier: MIT
+# Public helper for built-in and trusted external check tasks.
+- name: Validate result identity and status
+  ansible.builtin.assert:
+    that:
+      - dfsa_record_control_id is string
+      - dfsa_record_status in dfsa_internal_valid_statuses
+      - dfsa_record_control_id in dfsa_selected_ids
+      - dfsa_record_control_id not in (dfsa_results | map(attribute='id') | list)
+      - dfsa_record_reason | default('') is string
+    fail_msg: >-
+      Invalid or duplicate result for {{ dfsa_record_control_id }}:
+      {{ dfsa_record_status }}.
+
+- name: Resolve result control metadata
+  ansible.builtin.set_fact:
+    dfsa_result_control: >-
+      {{
+        dfsa_selected_controls
+        | selectattr('id', 'equalto', dfsa_record_control_id)
+        | first
+      }}
+
+- name: Validate result status for the assessment type
+  ansible.builtin.assert:
+    that:
+      - >-
+        dfsa_result_control.assessment != "manual"
+        or dfsa_record_status == "manual_review"
+      - >-
+        dfsa_result_control.assessment != "automated"
+        or dfsa_record_status != "manual_review"
+    fail_msg: >-
+      Result status {{ dfsa_record_status }} is incompatible with
+      {{ dfsa_result_control.assessment }} control {{ dfsa_record_control_id }}.
+
+- name: Append audit result
+  ansible.builtin.set_fact:
+    dfsa_results: >-
+      {{
+        dfsa_results
+        + [
+          {
+            'id': dfsa_result_control.id,
+            'title': dfsa_result_control.title,
+            'section': dfsa_result_control.section,
+            'assessment': dfsa_result_control.assessment,
+            'scored': dfsa_result_control.scored,
+            'status': dfsa_record_status,
+            'reason': dfsa_record_reason | default(''),
+            'evidence': (
+              dfsa_record_evidence
+              | default('No probe evidence was returned.', true)
+              | string
+              | truncate(4096, true, '…', 0)
+            ),
+            'references': dfsa_result_control.references
+          }
+        ]
+      }}

@@ -1,0 +1,268 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Inspect IPv4 redirect acceptance
+  ansible.builtin.shell: |
+    all_value=$(/usr/sbin/sysctl -n net.ipv4.conf.all.accept_redirects) || exit 2
+    default_value=$(/usr/sbin/sysctl -n net.ipv4.conf.default.accept_redirects) || exit 2
+    printf 'all=%s default=%s\n' "$all_value" "$default_value"
+    [[ "$all_value" == 0 && "$default_value" == 0 ]]
+  args:
+    executable: /bin/bash
+  register: dfsa_net_001_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-NET-001' in dfsa_selected_ids"
+
+- name: Record DFSA-NET-001
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-001
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_net_001_probe.rc == 0
+        else ('error' if dfsa_net_001_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: IPv4 accept_redirects must be 0 for all and default interfaces.
+    dfsa_record_evidence: "{{ dfsa_net_001_probe.stdout | default(dfsa_net_001_probe.stderr, true) }}"
+  when: "'DFSA-NET-001' in dfsa_selected_ids"
+
+- name: Inspect IPv4 source routing
+  ansible.builtin.shell: |
+    all_value=$(/usr/sbin/sysctl -n net.ipv4.conf.all.accept_source_route) || exit 2
+    default_value=$(/usr/sbin/sysctl -n net.ipv4.conf.default.accept_source_route) || exit 2
+    printf 'all=%s default=%s\n' "$all_value" "$default_value"
+    [[ "$all_value" == 0 && "$default_value" == 0 ]]
+  args:
+    executable: /bin/bash
+  register: dfsa_net_002_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-NET-002' in dfsa_selected_ids"
+
+- name: Record DFSA-NET-002
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-002
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_net_002_probe.rc == 0
+        else ('error' if dfsa_net_002_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: IPv4 accept_source_route must be 0 for all and default interfaces.
+    dfsa_record_evidence: "{{ dfsa_net_002_probe.stdout | default(dfsa_net_002_probe.stderr, true) }}"
+  when: "'DFSA-NET-002' in dfsa_selected_ids"
+
+- name: Inspect TCP SYN cookies
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, -n, net.ipv4.tcp_syncookies]
+  register: dfsa_net_003_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-NET-003' in dfsa_selected_ids"
+
+- name: Record DFSA-NET-003
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-003
+    dfsa_record_status: >-
+      {{
+        'error'
+        if dfsa_net_003_probe.rc != 0
+        else ('pass' if dfsa_net_003_probe.stdout | trim == '1' else 'fail')
+      }}
+    dfsa_record_reason: net.ipv4.tcp_syncookies must equal 1.
+    dfsa_record_evidence: "{{ dfsa_net_003_probe.stdout | default(dfsa_net_003_probe.stderr, true) }}"
+  when: "'DFSA-NET-003' in dfsa_selected_ids"
+
+- name: Inspect endpoint packet forwarding
+  ansible.builtin.shell: |
+    ipv4=$(/usr/sbin/sysctl -n net.ipv4.ip_forward) || exit 2
+    if [[ -e /proc/sys/net/ipv6/conf/all/forwarding ]]; then
+      ipv6=$(/usr/sbin/sysctl -n net.ipv6.conf.all.forwarding) || exit 2
+    else
+      ipv6=0
+    fi
+    printf 'ipv4=%s ipv6=%s\n' "$ipv4" "$ipv6"
+    [[ "$ipv4" == 0 && "$ipv6" == 0 ]]
+  args:
+    executable: /bin/bash
+  register: dfsa_net_004_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - "'DFSA-NET-004' in dfsa_selected_ids"
+    - dfsa_host_network_role == "endpoint"
+
+- name: Record DFSA-NET-004 endpoint result
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-004
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_net_004_probe.rc == 0
+        else ('error' if dfsa_net_004_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: Endpoint hosts must disable IPv4 and IPv6 forwarding.
+    dfsa_record_evidence: "{{ dfsa_net_004_probe.stdout | default(dfsa_net_004_probe.stderr, true) }}"
+  when:
+    - "'DFSA-NET-004' in dfsa_selected_ids"
+    - dfsa_host_network_role == "endpoint"
+
+- name: Record DFSA-NET-004 as not applicable to routers
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-004
+    dfsa_record_status: not_applicable
+    dfsa_record_reason: The host is explicitly classified as a router.
+    dfsa_record_evidence: dfsa_host_network_role=router
+  when:
+    - "'DFSA-NET-004' in dfsa_selected_ids"
+    - dfsa_host_network_role == "router"
+
+- name: Inspect active host firewall rules
+  ansible.builtin.shell: |
+    set -o pipefail
+    probe_error=0
+    if [[ -x /usr/sbin/ufw ]]; then
+      ufw_status=$(LC_ALL=C /usr/sbin/ufw status 2>&1)
+      ufw_rc=$?
+      if ((ufw_rc != 0)); then
+        probe_error=1
+      elif grep -q '^Status: active$' <<<"$ufw_status"; then
+        printf '%s\n' 'ufw reports an active policy'
+        exit 0
+      fi
+    fi
+    if [[ -x /usr/sbin/nft ]]; then
+      rules=$(/usr/sbin/nft list ruleset 2>&1) || {
+        printf '%s\n' "$rules" >&2
+        exit 2
+      }
+      if grep -Eq 'hook (input|forward|output)' <<<"$rules"; then
+        printf '%s\n' 'nftables contains a base chain'
+        exit 0
+      fi
+    fi
+    if ((probe_error != 0)); then
+      printf '%s\n' 'Unable to inspect the installed ufw policy' >&2
+      exit 2
+    fi
+    printf '%s\n' 'No active ufw policy or nftables base chain was found'
+    exit 1
+  args:
+    executable: /bin/bash
+  register: dfsa_net_005_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-NET-005' in dfsa_selected_ids"
+
+- name: Record DFSA-NET-005
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-005
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_net_005_probe.rc == 0
+        else ('error' if dfsa_net_005_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect the installed host firewall.'
+        if dfsa_net_005_probe.rc == 2
+        else 'An active ufw policy or nftables base chain must be present.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_net_005_probe.stdout | default(dfsa_net_005_probe.stderr, true) }}"
+  when: "'DFSA-NET-005' in dfsa_selected_ids"
+
+- name: Inspect IPv6 redirect acceptance
+  ansible.builtin.shell: |
+    if [[ ! -e /proc/sys/net/ipv6 ]]; then
+      printf '%s\n' 'IPv6 is unavailable in the running kernel'
+      exit 3
+    fi
+    all_value=$(/usr/sbin/sysctl -n net.ipv6.conf.all.accept_redirects) || exit 2
+    default_value=$(/usr/sbin/sysctl -n net.ipv6.conf.default.accept_redirects) || exit 2
+    printf 'all=%s default=%s\n' "$all_value" "$default_value"
+    [[ "$all_value" == 0 && "$default_value" == 0 ]]
+  args:
+    executable: /bin/bash
+  register: dfsa_net_006_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-NET-006' in dfsa_selected_ids"
+
+- name: Record DFSA-NET-006
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-006
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_net_006_probe.rc == 0
+        else (
+          'not_applicable'
+          if dfsa_net_006_probe.rc == 3
+          else ('error' if dfsa_net_006_probe.rc == 2 else 'fail')
+        )
+      }}
+    dfsa_record_reason: >-
+      {{
+        'IPv6 is unavailable.'
+        if dfsa_net_006_probe.rc == 3
+        else 'IPv6 accept_redirects must be 0 for all and default interfaces.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_net_006_probe.stdout | default(dfsa_net_006_probe.stderr, true) }}"
+  when: "'DFSA-NET-006' in dfsa_selected_ids"
+
+- name: Inspect wireless interfaces on strict servers
+  ansible.builtin.shell: |
+    [[ -d /sys/class/net ]] || {
+      printf '%s\n' 'Unable to inspect /sys/class/net' >&2
+      exit 2
+    }
+    shopt -s nullglob
+    found=()
+    for marker in /sys/class/net/*/wireless; do
+      found+=("$(basename "$(dirname "$marker")")")
+    done
+    if [[ -n "${found[*]}" ]]; then
+      printf '%s\n' "${found[@]}"
+      exit 1
+    fi
+    printf '%s\n' 'No wireless interfaces found'
+  args:
+    executable: /bin/bash
+  register: dfsa_net_007_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'DFSA-NET-007' in dfsa_selected_ids"
+
+- name: Record DFSA-NET-007
+  ansible.builtin.include_tasks: ../record_result.yml
+  vars:
+    dfsa_record_control_id: DFSA-NET-007
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_net_007_probe.rc == 0
+        else ('error' if dfsa_net_007_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to inspect network interface types.'
+        if dfsa_net_007_probe.rc == 2
+        else 'Strict servers should expose no wireless network interfaces.'
+      }}
+    dfsa_record_evidence: "{{ dfsa_net_007_probe.stdout | default(dfsa_net_007_probe.stderr, true) }}"
+  when: "'DFSA-NET-007' in dfsa_selected_ids"

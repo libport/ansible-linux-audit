@@ -1,0 +1,8 @@
+---
+# SPDX-License-Identifier: MIT
+all:
+  hosts:
+    debian-audit-target:
+      ansible_host: 192.0.2.10
+      ansible_user: audit
+      # ansible_become_password: use Ansible Vault or an external secret source

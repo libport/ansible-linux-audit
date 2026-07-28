@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dfsa/external-catalog.schema.json",
+  "title": "DFSA external control catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "controls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/control"
+      }
+    },
+    "task_files": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^/"
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "controls"
+  ],
+  "$defs": {
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "section",
+        "profiles",
+        "assessment",
+        "scored",
+        "handler",
+        "rationale",
+        "references"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "section": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "standard_server",
+              "strict_server",
+              "standard_workstation",
+              "strict_workstation"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "assessment": {
+          "enum": [
+            "automated",
+            "manual"
+          ]
+        },
+        "scored": {
+          "type": "boolean"
+        },
+        "handler": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "format": "uri"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "manual_guidance": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "assessment": {
+                "const": "manual"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "manual_guidance"
+            ],
+            "properties": {
+              "handler": {
+                "const": "manual"
+              },
+              "scored": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

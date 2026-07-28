@@ -1,0 +1,9 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Audit Debian-family system security
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: debian_family_security_audit

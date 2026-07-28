@@ -1,0 +1,139 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Count result statuses
+  ansible.builtin.set_fact:
+    dfsa_totals:
+      selected: "{{ dfsa_results | length }}"
+      pass: "{{ dfsa_results | selectattr('status', 'equalto', 'pass') | list | length }}"
+      fail: "{{ dfsa_results | selectattr('status', 'equalto', 'fail') | list | length }}"
+      error: "{{ dfsa_results | selectattr('status', 'equalto', 'error') | list | length }}"
+      manual_review: >-
+        {{
+          dfsa_results
+          | selectattr('status', 'equalto', 'manual_review')
+          | list
+          | length
+        }}
+      not_applicable: >-
+        {{
+          dfsa_results
+          | selectattr('status', 'equalto', 'not_applicable')
+          | list
+          | length
+        }}
+      skipped: "{{ dfsa_results | selectattr('status', 'equalto', 'skipped') | list | length }}"
+
+- name: Select scored automated gate failures
+  ansible.builtin.set_fact:
+    dfsa_gate_failure_results: >-
+      {{
+        (
+          dfsa_results
+          | selectattr('assessment', 'equalto', 'automated')
+          | selectattr('scored', 'equalto', true)
+          | selectattr('status', 'equalto', 'fail')
+          | list
+        )
+        + (
+          dfsa_results
+          | selectattr('assessment', 'equalto', 'automated')
+          | selectattr('scored', 'equalto', true)
+          | selectattr('status', 'equalto', 'error')
+          | list
+        )
+      }}
+
+- name: Capture audit completion time
+  ansible.builtin.set_fact:
+    dfsa_finished_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%S.%fZ') }}"
+
+- name: Assemble audit report
+  ansible.builtin.set_fact:
+    dfsa_report:
+      schema_version: "1.0"
+      baseline: "{{ dfsa_baseline }}"
+      independent_project_notice: >-
+        This report assesses only the independent DFSA baseline. It is not a
+        CIS Benchmark assessment or certification.
+      host:
+        inventory_name: "{{ inventory_hostname }}"
+        hostname: "{{ ansible_facts.hostname }}"
+        distribution: "{{ ansible_facts.distribution }}"
+        distribution_version: "{{ ansible_facts.distribution_version }}"
+        architecture: "{{ ansible_facts.architecture }}"
+        kernel: "{{ ansible_facts.kernel }}"
+        virtualization_role: >-
+          {{ ansible_facts.virtualization_role | default('unknown', true) }}
+        virtualization_type: >-
+          {{ ansible_facts.virtualization_type | default('unknown', true) }}
+      audit:
+        profile: "{{ dfsa_profile }}"
+        started_at: "{{ dfsa_started_at }}"
+        finished_at: "{{ dfsa_finished_at }}"
+        include_controls: "{{ dfsa_include_controls }}"
+        exclude_controls: "{{ dfsa_exclude_controls }}"
+        sections: "{{ dfsa_sections }}"
+        network_role: "{{ dfsa_host_network_role }}"
+      totals: "{{ dfsa_totals }}"
+      results: "{{ dfsa_results | sort(attribute='id') }}"
+
+- name: Derive report path
+  ansible.builtin.set_fact:
+    dfsa_report_path: >-
+      {{
+        dfsa_report_dir
+        ~ '/'
+        ~ (
+          inventory_hostname
+          | regex_replace('[^A-Za-z0-9_.-]', '_')
+          | regex_replace('^[.]', '_')
+          | truncate(180, true, '', 0)
+        )
+        ~ '-'
+        ~ (dfsa_started_at | regex_replace('[^0-9A-Za-z]', ''))
+        ~ '.json'
+      }}
+
+- name: Create controller report directory
+  ansible.builtin.file:
+    path: "{{ dfsa_report_dir }}"
+    state: directory
+    mode: "0750"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Write controller JSON report
+  ansible.builtin.copy:
+    content: "{{ dfsa_report | to_nice_json }}\n"
+    dest: "{{ dfsa_report_path }}"
+    mode: "0640"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Print audit summary
+  ansible.builtin.debug:
+    msg:
+      - >-
+        DFSA {{ dfsa_baseline.version }} / {{ dfsa_profile }}:
+        pass={{ dfsa_totals.pass }}, fail={{ dfsa_totals.fail }},
+        error={{ dfsa_totals.error }},
+        manual={{ dfsa_totals.manual_review }},
+        n/a={{ dfsa_totals.not_applicable }},
+        skipped={{ dfsa_totals.skipped }}
+      - "Report: {{ dfsa_report_path }}"
+
+- name: Enforce optional noncompliance gate
+  ansible.builtin.fail:
+    msg: >-
+      DFSA gate failed with
+      {{ dfsa_gate_failure_results | selectattr('status', 'equalto', 'fail') | list | length }}
+      failed and
+      {{ dfsa_gate_failure_results | selectattr('status', 'equalto', 'error') | list | length }}
+      errored scored automated controls. Report: {{ dfsa_report_path }}
+  when:
+    - dfsa_fail_on_noncompliance | bool
+    - dfsa_gate_failure_results | length > 0

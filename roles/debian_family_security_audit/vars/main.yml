@@ -1,0 +1,626 @@
+---
+# SPDX-License-Identifier: MIT
+dfsa_baseline:
+  id: DFSA
+  title: Debian Family Security Audit Baseline
+  version: 1.0.0
+  license: MIT
+
+dfsa_internal_valid_profiles:
+  - standard_server
+  - strict_server
+  - standard_workstation
+  - strict_workstation
+
+dfsa_internal_valid_statuses:
+  - pass
+  - fail
+  - error
+  - manual_review
+  - not_applicable
+  - skipped
+
+dfsa_ref_debian_security: &ref_debian_security >-
+  https://www.debian.org/doc/manuals/securing-debian-manual/
+dfsa_ref_debian_apt: &ref_debian_apt >-
+  https://www.debian.org/doc/manuals/debian-handbook/sect.apt-get.en.html
+dfsa_ref_kernel_sysctl: &ref_kernel_sysctl >-
+  https://docs.kernel.org/admin-guide/sysctl/kernel.html
+dfsa_ref_kernel_network: &ref_kernel_network >-
+  https://docs.kernel.org/networking/ip-sysctl.html
+dfsa_ref_kernel_filesystem: &ref_kernel_filesystem >-
+  https://docs.kernel.org/admin-guide/sysctl/fs.html
+dfsa_ref_openssh: &ref_openssh >-
+  https://man.openbsd.org/sshd_config
+dfsa_ref_systemd_journal: &ref_systemd_journal >-
+  https://www.freedesktop.org/software/systemd/man/latest/journald.conf.html
+dfsa_ref_systemd_time: &ref_systemd_time >-
+  https://www.freedesktop.org/software/systemd/man/latest/systemd-timesyncd.service.html
+dfsa_ref_nftables: &ref_nftables >-
+  https://wiki.nftables.org/wiki-nftables/index.php/Main_Page
+dfsa_ref_shadow: &ref_shadow >-
+  https://manpages.debian.org/stable/passwd/login.defs.5.en.html
+dfsa_ref_pam: &ref_pam >-
+  https://manpages.debian.org/stable/libpam-runtime/pam.7.en.html
+dfsa_ref_pam_pwquality: &ref_pam_pwquality >-
+  https://manpages.debian.org/stable/libpam-pwquality/pam_pwquality.8.en.html
+dfsa_ref_passwdqc: &ref_passwdqc >-
+  https://www.openwall.com/passwdqc/README
+dfsa_ref_audit: &ref_audit >-
+  https://github.com/linux-audit/audit-documentation
+dfsa_ref_logrotate: &ref_logrotate >-
+  https://manpages.debian.org/stable/logrotate/logrotate.8.en.html
+dfsa_ref_fhs: &ref_fhs >-
+  https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html
+
+dfsa_builtin_catalog:
+  - id: DFSA-FS-001
+    title: Shared-memory temporary storage uses defensive mount options
+    section: filesystem
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: fs_001
+    rationale: Shared memory should not provide an easy path to device files or privileged execution.
+    references: [*ref_debian_security]
+
+  - id: DFSA-FS-002
+    title: World-writable directories preserve file ownership
+    section: filesystem
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: fs_002
+    rationale: The sticky bit prevents users from deleting files owned by other users in shared directories.
+    references: [*ref_fhs]
+
+  - id: DFSA-FS-003
+    title: Local filesystems contain no ownerless files
+    section: filesystem
+    profiles: [strict_server, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: fs_003
+    rationale: Files without resolvable owners can retain unintended access after account changes.
+    references: [*ref_debian_security]
+
+  - id: DFSA-FS-004
+    title: Privileged executable inventory is reviewed
+    section: filesystem
+    profiles: [strict_server, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Set-user-ID and set-group-ID programs expand the paths through which privileges can be gained.
+    references: [*ref_debian_security]
+    manual_guidance: Compare privileged executables with an approved, package-owned inventory and investigate additions.
+
+  - id: DFSA-FS-005
+    title: Dedicated temporary storage uses defensive mount options
+    section: filesystem
+    profiles: [strict_server, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: fs_005
+    rationale: A separately constrained temporary filesystem limits device and privilege abuse.
+    references: [*ref_debian_security]
+
+  - id: DFSA-PKG-001
+    title: Available package upgrades have been applied
+    section: packages
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: pkg_001
+    rationale: Pending vendor updates leave known fixes unapplied.
+    references: [*ref_debian_apt]
+
+  - id: DFSA-PKG-002
+    title: Automatic package update checks are scheduled
+    section: packages
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: pkg_002
+    rationale: Regular automated checks reduce the time between publication and discovery of updates.
+    references: [*ref_debian_apt]
+
+  - id: DFSA-PKG-003
+    title: APT sources do not bypass signature trust
+    section: packages
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: pkg_003
+    rationale: Marking a repository unconditionally trusted defeats package-origin verification.
+    references: [*ref_debian_apt]
+
+  - id: DFSA-PKG-004
+    title: Legacy clear-text remote login servers are absent
+    section: packages
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: pkg_004
+    rationale: Obsolete remote login protocols expose credentials and sessions to interception.
+    references: [*ref_debian_security]
+
+  - id: DFSA-PKG-005
+    title: Operating-system support lifecycle is documented
+    section: packages
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Security updates depend on an active vendor or organizational maintenance commitment.
+    references: [*ref_debian_security]
+    manual_guidance: Confirm the exact distribution release has an approved update source through its planned retirement.
+
+  - id: DFSA-KRN-001
+    title: Full address-space randomization is enabled
+    section: kernel
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_001
+    rationale: Randomized process layouts make memory-corruption exploitation less predictable.
+    references: [*ref_kernel_sysctl]
+
+  - id: DFSA-KRN-002
+    title: Unprivileged users cannot read the kernel message buffer
+    section: kernel
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_002
+    rationale: Kernel messages can reveal addresses, devices, and other operational details.
+    references: [*ref_kernel_sysctl]
+
+  - id: DFSA-KRN-003
+    title: Kernel pointer exposure is restricted
+    section: kernel
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_003
+    rationale: Hiding kernel pointers reduces information available for kernel exploitation.
+    references: [*ref_kernel_sysctl]
+
+  - id: DFSA-KRN-004
+    title: Cross-process tracing is restricted
+    section: kernel
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_004
+    rationale: Restricting ptrace reduces access to another process's memory and credentials.
+    references: [*ref_kernel_sysctl]
+
+  - id: DFSA-KRN-005
+    title: Unprivileged BPF use is disabled
+    section: kernel
+    profiles: [strict_server, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_005
+    rationale: BPF exposes a large kernel interface that most unprivileged workloads do not require.
+    references: [*ref_kernel_sysctl]
+
+  - id: DFSA-KRN-006
+    title: Set-user-ID programs do not create core dumps
+    section: kernel
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_006
+    rationale: Core dumps from privileged programs can disclose sensitive process memory.
+    references: [*ref_kernel_filesystem]
+
+  - id: DFSA-KRN-007
+    title: Symbolic-link and hard-link protections are enabled
+    section: kernel
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_007
+    rationale: Protected link handling blocks common races in shared writable directories.
+    references: [*ref_kernel_filesystem]
+
+  - id: DFSA-KRN-008
+    title: Performance events are restricted to privileged users
+    section: kernel
+    profiles: [strict_server, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: krn_008
+    rationale: Performance monitoring can disclose kernel and process behavior across security boundaries.
+    references: [*ref_kernel_sysctl]
+
+  - id: DFSA-KRN-009
+    title: Boot-chain trust is verified
+    section: kernel
+    profiles: [strict_server, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Host protections depend on loading an authorized kernel and early-boot configuration.
+    references: [*ref_debian_security]
+    manual_guidance: Verify firmware, bootloader, kernel, and recovery paths meet the organization's boot-trust policy.
+
+  - id: DFSA-NET-001
+    title: IPv4 redirect acceptance is disabled
+    section: network
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: net_001
+    rationale: Hosts should not let unauthenticated redirect messages rewrite normal routing decisions.
+    references: [*ref_kernel_network]
+
+  - id: DFSA-NET-002
+    title: IPv4 source-routed packets are rejected
+    section: network
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: net_002
+    rationale: Source routing lets a sender influence a packet path in ways ordinary endpoints do not require.
+    references: [*ref_kernel_network]
+
+  - id: DFSA-NET-003
+    title: TCP SYN flood cookies are enabled
+    section: network
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: net_003
+    rationale: SYN cookies preserve connection handling when the incomplete-connection queue is exhausted.
+    references: [*ref_kernel_network]
+
+  - id: DFSA-NET-004
+    title: Endpoint packet forwarding is disabled
+    section: network
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: net_004
+    rationale: Systems not acting as routers should not forward traffic between networks.
+    references: [*ref_kernel_network]
+
+  - id: DFSA-NET-005
+    title: A host firewall has an active ruleset
+    section: network
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: net_005
+    rationale: Host filtering limits exposed traffic even when network boundaries fail.
+    references: [*ref_nftables]
+
+  - id: DFSA-NET-006
+    title: IPv6 redirect acceptance is disabled
+    section: network
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: net_006
+    rationale: IPv6 endpoints should not accept unauthenticated route changes from redirect messages.
+    references: [*ref_kernel_network]
+
+  - id: DFSA-NET-007
+    title: Strict servers have no wireless interfaces
+    section: network
+    profiles: [strict_server]
+    assessment: automated
+    scored: true
+    handler: net_007
+    rationale: Unused radio interfaces add an unmanaged path into a server.
+    references: [*ref_debian_security]
+
+  - id: DFSA-NET-008
+    title: Exposed listening services are approved
+    section: network
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: A listening socket can be legitimate only in the context of the host's intended role.
+    references: [*ref_debian_security]
+    manual_guidance: Compare listening TCP and UDP sockets, owning processes, and bind addresses with the approved service inventory.
+
+  - id: DFSA-ID-001
+    title: Local accounts do not have empty password fields
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_001
+    rationale: An empty local password field can permit authentication without a secret.
+    references: [*ref_shadow]
+
+  - id: DFSA-ID-002
+    title: Local numeric user identifiers are unique
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_002
+    rationale: Duplicate identifiers make file ownership and process attribution ambiguous.
+    references: [*ref_shadow]
+
+  - id: DFSA-ID-003
+    title: Interactive users have owned home directories
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_003
+    rationale: Missing or incorrectly owned homes expose user startup files and private data.
+    references: [*ref_fhs]
+
+  - id: DFSA-ID-004
+    title: Local account databases have protective ownership and modes
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_004
+    rationale: Account databases must resist unauthorized replacement and disclosure.
+    references: [*ref_shadow]
+
+  - id: DFSA-ID-005
+    title: The root command path contains only trusted directories
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_005
+    rationale: Empty, relative, or writable path entries can redirect privileged command execution.
+    references: [*ref_debian_security]
+
+  - id: DFSA-ID-006
+    title: New-account password aging defaults are bounded
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_006
+    rationale: Defined aging defaults prevent newly created local passwords from remaining unchanged indefinitely.
+    references: [*ref_shadow]
+
+  - id: DFSA-ID-007
+    title: Inactive new accounts receive a lock deadline
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_007
+    rationale: Locking accounts after password expiry reduces forgotten dormant credentials.
+    references: [*ref_shadow]
+
+  - id: DFSA-ID-008
+    title: Strict profiles enforce local password quality
+    section: identity
+    profiles: [strict_server, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: id_008
+    rationale: A PAM quality module provides consistent minimum checks when local passwords are changed.
+    references: [*ref_pam, *ref_pam_pwquality, *ref_passwdqc]
+
+  - id: DFSA-ID-009
+    title: Privileged access uses phishing-resistant authentication
+    section: identity
+    profiles: [strict_server, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: A second, verifier-bound factor limits the impact of a stolen reusable password.
+    references: [*ref_debian_security]
+    manual_guidance: Verify privileged interactive access requires an approved phishing-resistant factor or documented compensating control.
+
+  - id: DFSA-ID-010
+    title: Human and service account ownership is reviewed
+    section: identity
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Technical account state cannot prove that an account still has a valid owner and purpose.
+    references: [*ref_debian_security]
+    manual_guidance: Reconcile local and directory-backed accounts with current owners, purposes, and approved privilege.
+
+  - id: DFSA-SSH-001
+    title: OpenSSH server configuration is internally valid
+    section: ssh
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: ssh_001
+    rationale: Invalid configuration can cause unsafe fallback behavior or service failure during reload.
+    references: [*ref_openssh]
+
+  - id: DFSA-SSH-002
+    title: Direct SSH login as root is disabled
+    section: ssh
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: ssh_002
+    rationale: Named accounts preserve attribution before privilege is elevated.
+    references: [*ref_openssh]
+
+  - id: DFSA-SSH-003
+    title: OpenSSH rejects empty passwords
+    section: ssh
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: ssh_003
+    rationale: Remote authentication must never accept a blank reusable secret.
+    references: [*ref_openssh]
+
+  - id: DFSA-SSH-004
+    title: OpenSSH host-based trust mechanisms are disabled
+    section: ssh
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: ssh_004
+    rationale: Host-name trust files do not provide a strong user authentication boundary.
+    references: [*ref_openssh]
+
+  - id: DFSA-SSH-005
+    title: OpenSSH limits authentication attempts
+    section: ssh
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: ssh_005
+    rationale: A short per-connection attempt limit slows guessing and bounds authentication work.
+    references: [*ref_openssh]
+
+  - id: DFSA-SSH-006
+    title: Strict profiles disable SSH password authentication
+    section: ssh
+    profiles: [strict_server, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: ssh_006
+    rationale: Public-key or hardware-backed authentication avoids transmitting reusable account passwords.
+    references: [*ref_openssh]
+
+  - id: DFSA-SSH-007
+    title: Servers disable SSH X11 forwarding
+    section: ssh
+    profiles: [standard_server, strict_server]
+    assessment: automated
+    scored: true
+    handler: ssh_007
+    rationale: General-purpose servers rarely need an SSH-managed graphical display channel.
+    references: [*ref_openssh]
+
+  - id: DFSA-SSH-008
+    title: SSH access policy is explicitly scoped
+    section: ssh
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Host configuration alone cannot determine which organizational identities require remote access.
+    references: [*ref_openssh]
+    manual_guidance: Review AllowUsers, AllowGroups, Match rules, and upstream identity policy against the approved administrator population.
+
+  - id: DFSA-LOG-001
+    title: System time synchronization is active
+    section: logging
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: log_001
+    rationale: Reliable timestamps are required to correlate security events across systems.
+    references: [*ref_systemd_time]
+
+  - id: DFSA-LOG-002
+    title: The system journal persists across reboots
+    section: logging
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: log_002
+    rationale: Volatile-only logs remove evidence when a host restarts.
+    references: [*ref_systemd_journal]
+
+  - id: DFSA-LOG-003
+    title: Strict profiles run the Linux audit daemon
+    section: logging
+    profiles: [strict_server, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: log_003
+    rationale: Kernel audit records provide higher-fidelity attribution for selected security events.
+    references: [*ref_audit]
+
+  - id: DFSA-LOG-004
+    title: Security logs are retained outside the host
+    section: logging
+    profiles: [strict_server, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Local attackers and hardware failures can destroy host-only evidence.
+    references: [*ref_systemd_journal]
+    manual_guidance: Confirm important logs reach an access-controlled remote destination and meet approved retention periods.
+
+  - id: DFSA-LOG-005
+    title: Log rotation is scheduled
+    section: logging
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: log_005
+    rationale: Rotation prevents traditional text logs from consuming storage without bound.
+    references: [*ref_logrotate]
+
+  - id: DFSA-SVC-001
+    title: Legacy super-server packages are absent
+    section: services
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: automated
+    scored: true
+    handler: svc_001
+    rationale: Legacy service multiplexers increase exposed code and enable obsolete protocols.
+    references: [*ref_debian_security]
+
+  - id: DFSA-SVC-002
+    title: Servers do not advertise local discovery services
+    section: services
+    profiles: [standard_server, strict_server]
+    assessment: automated
+    scored: true
+    handler: svc_002
+    rationale: General-purpose servers normally do not need multicast workstation discovery.
+    references: [*ref_debian_security]
+
+  - id: DFSA-SVC-003
+    title: Servers do not run local printing services
+    section: services
+    profiles: [standard_server, strict_server]
+    assessment: automated
+    scored: true
+    handler: svc_003
+    rationale: A print service adds network and parser attack surface when printing is not a server role.
+    references: [*ref_debian_security]
+
+  - id: DFSA-SVC-004
+    title: Enabled network services match the host role
+    section: services
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Only the system owner can decide whether each enabled service supports an approved purpose.
+    references: [*ref_debian_security]
+    manual_guidance: Review enabled units, sockets, and listening processes against the documented host role and remove unexplained entries.
+
+  - id: DFSA-GOV-001
+    title: Backups and restoration procedures are tested
+    section: governance
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Backup presence does not establish that protected data can be restored within operational requirements.
+    references: [*ref_debian_security]
+    manual_guidance: Review recent restore-test evidence, encryption, access control, retention, and recovery objectives.
+
+  - id: DFSA-GOV-002
+    title: Storage encryption matches physical exposure
+    section: governance
+    profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
+    assessment: manual
+    scored: false
+    handler: manual
+    rationale: Encryption requirements depend on physical custody, boot design, and the data stored by the host.
+    references: [*ref_debian_security]
+    manual_guidance: Verify sensitive persistent and removable storage uses approved encryption and key-recovery procedures.

@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dfsa/report.schema.json",
+  "title": "DFSA audit report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "baseline",
+    "independent_project_notice",
+    "host",
+    "audit",
+    "totals",
+    "results"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "version",
+        "license"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "license": {
+          "const": "MIT"
+        }
+      }
+    },
+    "independent_project_notice": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inventory_name",
+        "hostname",
+        "distribution",
+        "distribution_version",
+        "architecture",
+        "kernel",
+        "virtualization_role",
+        "virtualization_type"
+      ],
+      "properties": {
+        "inventory_name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "hostname": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "distribution": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "distribution_version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "architecture": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "kernel": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "virtualization_role": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "virtualization_type": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "started_at",
+        "finished_at",
+        "include_controls",
+        "exclude_controls",
+        "sections",
+        "network_role"
+      ],
+      "properties": {
+        "profile": {
+          "enum": [
+            "standard_server",
+            "strict_server",
+            "standard_workstation",
+            "strict_workstation"
+          ]
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "include_controls": {
+          "$ref": "#/$defs/uniqueStrings"
+        },
+        "exclude_controls": {
+          "$ref": "#/$defs/uniqueStrings"
+        },
+        "sections": {
+          "$ref": "#/$defs/uniqueStrings"
+        },
+        "network_role": {
+          "enum": [
+            "endpoint",
+            "router"
+          ]
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected",
+        "pass",
+        "fail",
+        "error",
+        "manual_review",
+        "not_applicable",
+        "skipped"
+      ],
+      "properties": {
+        "selected": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "pass": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "fail": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "error": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "manual_review": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "not_applicable": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "skipped": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/result"
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "uniqueStrings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "uniqueItems": true
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "section",
+        "assessment",
+        "scored",
+        "status",
+        "reason",
+        "evidence",
+        "references"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "section": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "assessment": {
+          "enum": [
+            "automated",
+            "manual"
+          ]
+        },
+        "scored": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "error",
+            "manual_review",
+            "not_applicable",
+            "skipped"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "format": "uri"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "assessment": {
+                "const": "manual"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scored": {
+                "const": false
+              },
+              "status": {
+                "const": "manual_review"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "manual_review"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
