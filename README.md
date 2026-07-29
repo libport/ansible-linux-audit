@@ -144,32 +144,6 @@ Generated JSON can be checked independently:
 ```bash
 python3 tools/validate_report.py artifacts/*.json
 ```
-
-### Project maintenance
-
-Repository maintenance is owner-only. External pull requests, patches, and
-other repository contributions are not accepted. This upstream policy does not
-limit the rights granted by the MIT License: recipients may use, modify, and
-fork the software, but changes from independent forks will not be merged into
-this repository.
-
-The project does not accept security or vulnerability reports and does not
-provide or monitor a reporting channel or security-response service. Do not
-submit credentials, private keys, password hashes, or production audit output
-through repository features. Users are responsible for evaluating the
-software, tracking relevant dependencies, applying necessary mitigations, and
-maintaining changes in their own forks.
-
-Owner-authored changes must be original or clearly MIT-compatible and must not
-reconstruct restricted third-party benchmarks.
-
-Before publishing a promoted release, review the
-[licensing boundaries](docs/licensing.md) and
-[release checklist](docs/release-checklist.md).
-
 ## License
 
-Original repository content is licensed under the [MIT License](LICENSE). MIT
-is an open-source license, not a public-domain dedication: recipients may use,
-modify, distribute, sublicense, and sell the work, but must retain its
-copyright and license notice.
+Original repository content is licensed under the [MIT License](LICENSE).
