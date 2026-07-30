@@ -44,8 +44,22 @@
       }}
 
 - name: Capture audit completion time
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - >-
+        from datetime import datetime, timezone;
+        print(datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"))
+  register: dfsa_finished_at_probe
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+
+- name: Preserve ordered audit timestamps
   ansible.builtin.set_fact:
-    dfsa_finished_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%S.%fZ') }}"
+    dfsa_finished_at: "{{ [dfsa_started_at, dfsa_finished_at_probe.stdout] | max }}"
 
 - name: Assemble audit report
   ansible.builtin.set_fact:

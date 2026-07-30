@@ -131,30 +131,109 @@
     set -o pipefail
     probe_error=0
     if [[ -x /usr/sbin/ufw ]]; then
-      ufw_status=$(LC_ALL=C /usr/sbin/ufw status 2>&1)
+      ufw_status=$(LC_ALL=C /usr/sbin/ufw status verbose 2>&1)
       ufw_rc=$?
       if ((ufw_rc != 0)); then
         probe_error=1
       elif grep -q '^Status: active$' <<<"$ufw_status"; then
-        printf '%s\n' 'ufw reports an active policy'
-        exit 0
+        if grep -Eiq '^Default:.*(deny|reject) \(incoming\)' <<<"$ufw_status" ||
+           grep -Eq '(^|[[:space:]])(DENY|REJECT)([[:space:]]|$)' <<<"$ufw_status"; then
+          printf '%s\n' 'ufw reports active incoming traffic filtering'
+          exit 0
+        fi
       fi
     fi
     if [[ -x /usr/sbin/nft ]]; then
-      rules=$(/usr/sbin/nft list ruleset 2>&1) || {
-        printf '%s\n' "$rules" >&2
+      rules=$(/usr/sbin/nft --json list ruleset) || {
+        printf '%s\n' 'Unable to read the nftables ruleset' >&2
         exit 2
       }
-      if grep -Eq 'hook (input|forward|output)' <<<"$rules"; then
-        printf '%s\n' 'nftables contains a base chain'
+      python_path={{ ansible_facts.python.executable | quote }}
+      if printf '%s' "$rules" | "$python_path" -c '
+    import json
+    import sys
+
+    try:
+        document = json.load(sys.stdin)
+        objects = document["nftables"]
+    except (KeyError, TypeError, ValueError):
+        raise SystemExit(2)
+
+    chains = {}
+    rules = {}
+    for item in objects:
+        if "chain" in item:
+            chain = item["chain"]
+            key = (chain.get("family"), chain.get("table"), chain.get("name"))
+            chains[key] = chain
+        elif "rule" in item:
+            rule = item["rule"]
+            key = (rule.get("family"), rule.get("table"), rule.get("chain"))
+            rules.setdefault(key, []).append(rule.get("expr", []))
+
+    def contains_filtering_verdict(value):
+        if isinstance(value, dict):
+            if "drop" in value or "reject" in value:
+                return True
+            return any(contains_filtering_verdict(child) for child in value.values())
+        if isinstance(value, list):
+            return any(contains_filtering_verdict(child) for child in value)
+        return False
+
+    def jump_targets(value):
+        targets = []
+        if isinstance(value, dict):
+            for name in ("jump", "goto"):
+                if name in value:
+                    target = value[name]
+                    if isinstance(target, dict):
+                        target = target.get("target")
+                    if isinstance(target, str):
+                        targets.append(target)
+            for child in value.values():
+                targets.extend(jump_targets(child))
+        elif isinstance(value, list):
+            for child in value:
+                targets.extend(jump_targets(child))
+        return targets
+
+    pending = [
+        key for key, chain in chains.items()
+        if chain.get("hook") == "input"
+    ]
+    visited = set()
+    while pending:
+        key = pending.pop()
+        if key in visited:
+            continue
+        visited.add(key)
+        chain = chains.get(key, {})
+        if chain.get("policy") == "drop":
+            raise SystemExit(0)
+        for expressions in rules.get(key, []):
+            if contains_filtering_verdict(expressions):
+                raise SystemExit(0)
+            for target in jump_targets(expressions):
+                target_key = (key[0], key[1], target)
+                if target_key in chains:
+                    pending.append(target_key)
+    raise SystemExit(1)
+      '; then
+        printf '%s\n' 'nftables applies drop/reject filtering to incoming traffic'
         exit 0
+      else
+        nft_parse_rc=$?
+        if ((nft_parse_rc == 2)); then
+          printf '%s\n' 'Unable to parse the nftables JSON ruleset' >&2
+          exit 2
+        fi
       fi
     fi
     if ((probe_error != 0)); then
       printf '%s\n' 'Unable to inspect the installed ufw policy' >&2
       exit 2
     fi
-    printf '%s\n' 'No active ufw policy or nftables base chain was found'
+    printf '%s\n' 'No effective incoming ufw or nftables filtering was found'
     exit 1
   args:
     executable: /bin/bash
@@ -178,7 +257,7 @@
       {{
         'Unable to inspect the installed host firewall.'
         if dfsa_net_005_probe.rc == 2
-        else 'An active ufw policy or nftables base chain must be present.'
+        else 'An active ufw or nftables policy must filter incoming traffic.'
       }}
     dfsa_record_evidence: "{{ dfsa_net_005_probe.stdout | default(dfsa_net_005_probe.stderr, true) }}"
   when: "'DFSA-NET-005' in dfsa_selected_ids"

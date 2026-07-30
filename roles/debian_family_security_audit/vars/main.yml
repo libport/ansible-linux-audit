@@ -369,13 +369,13 @@ dfsa_builtin_catalog:
     references: [*ref_shadow]
 
   - id: DFSA-ID-005
-    title: The root command path contains only trusted directories
+    title: Privilege-escalated audit commands use a trusted search path
     section: identity
     profiles: [standard_server, strict_server, standard_workstation, strict_workstation]
     assessment: automated
     scored: true
     handler: id_005
-    rationale: Empty, relative, or writable path entries can redirect privileged command execution.
+    rationale: Empty, relative, or writable path entries can redirect inspection commands executed with audit privileges.
     references: [*ref_debian_security]
 
   - id: DFSA-ID-006

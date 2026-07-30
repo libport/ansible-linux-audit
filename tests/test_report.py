@@ -110,6 +110,12 @@ class ReportValidatorTests(unittest.TestCase):
                     "exclude_controls", ["DFSA-KRN-001"]
                 ),
             ),
+            "mapping-valued filter": lambda report: report["audit"].__setitem__(
+                "include_controls", {"DFSA-KRN-001": None}
+            ),
+            "reversed timestamps": lambda report: report["audit"].__setitem__(
+                "finished_at", "2026-07-28T23:59:59.999999Z"
+            ),
         }
         for name, mutate in cases.items():
             with self.subTest(name=name):

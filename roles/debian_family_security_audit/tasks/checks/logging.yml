@@ -2,25 +2,21 @@
 # SPDX-License-Identifier: MIT
 - name: Inspect active time synchronization
   ansible.builtin.shell: |
-    synchronized=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)
+    synchronized=$(LC_ALL=C timedatectl show -p NTPSynchronized --value 2>&1) || {
+      printf '%s\n' "$synchronized" >&2
+      exit 2
+    }
+    synchronized=${synchronized,,}
     if [[ "$synchronized" == yes ]]; then
       printf '%s\n' 'timedatectl reports NTPSynchronized=yes'
       exit 0
     fi
-    for unit in \
-      systemd-timesyncd.service \
-      chrony.service \
-      chronyd.service \
-      ntp.service \
-      ntpsec.service \
-      openntpd.service; do
-      if systemctl is-active --quiet "$unit"; then
-        printf '%s\n' "$unit is active; current synchronization=$synchronized"
-        exit 0
-      fi
-    done
-    printf 'No active time synchronization service; synchronized=%s\n' "$synchronized"
-    exit 1
+    if [[ "$synchronized" == no ]]; then
+      printf '%s\n' 'timedatectl reports NTPSynchronized=no'
+      exit 1
+    fi
+    printf 'Unexpected NTPSynchronized value: %s\n' "$synchronized" >&2
+    exit 2
   args:
     executable: /bin/bash
   register: dfsa_log_001_probe
@@ -33,8 +29,18 @@
   ansible.builtin.include_tasks: ../record_result.yml
   vars:
     dfsa_record_control_id: DFSA-LOG-001
-    dfsa_record_status: "{{ 'pass' if dfsa_log_001_probe.rc == 0 else 'fail' }}"
-    dfsa_record_reason: A recognized synchronization service must be active.
+    dfsa_record_status: >-
+      {{
+        'pass'
+        if dfsa_log_001_probe.rc == 0
+        else ('error' if dfsa_log_001_probe.rc == 2 else 'fail')
+      }}
+    dfsa_record_reason: >-
+      {{
+        'Unable to determine the kernel synchronization state.'
+        if dfsa_log_001_probe.rc == 2
+        else 'timedatectl must report NTPSynchronized=yes.'
+      }}
     dfsa_record_evidence: "{{ dfsa_log_001_probe.stdout | default(dfsa_log_001_probe.stderr, true) }}"
   when: "'DFSA-LOG-001' in dfsa_selected_ids"
 

@@ -23,12 +23,22 @@
       - >-
         dfsa_host_network_role is string
         and dfsa_host_network_role in ["endpoint", "router"]
-      - dfsa_include_controls is sequence and dfsa_include_controls is not string
-      - dfsa_exclude_controls is sequence and dfsa_exclude_controls is not string
-      - dfsa_sections is sequence and dfsa_sections is not string
+      - >-
+        dfsa_include_controls is sequence
+        and dfsa_include_controls is not string
+        and dfsa_include_controls is not mapping
+      - >-
+        dfsa_exclude_controls is sequence
+        and dfsa_exclude_controls is not string
+        and dfsa_exclude_controls is not mapping
+      - >-
+        dfsa_sections is sequence
+        and dfsa_sections is not string
+        and dfsa_sections is not mapping
       - >-
         dfsa_server_service_exceptions is sequence
         and dfsa_server_service_exceptions is not string
+        and dfsa_server_service_exceptions is not mapping
       - >-
         dfsa_external_catalog_path is string
         and (
@@ -75,6 +85,20 @@
       service_mgr={{ ansible_facts.service_mgr | default('unknown') }},
       virtualization_type={{
       ansible_facts.virtualization_type | default('unknown') }}.
+
+- name: Capture audit start time on the controller
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - >-
+        from datetime import datetime, timezone;
+        print(datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"))
+  register: dfsa_started_at_probe
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
 
 - name: Validate control and section filter entries
   ansible.builtin.assert:
@@ -159,10 +183,13 @@
       - dfsa_external_catalog_data.controls is defined
       - dfsa_external_catalog_data.controls is sequence
       - dfsa_external_catalog_data.controls is not string
+      - dfsa_external_catalog_data.controls is not mapping
       - >-
         dfsa_external_catalog_data.task_files | default([]) is sequence
       - >-
         dfsa_external_catalog_data.task_files | default([]) is not string
+      - >-
+        dfsa_external_catalog_data.task_files | default([]) is not mapping
     fail_msg: >-
       External catalog may contain only controls and task_files; controls is
       required and both values must be lists.
@@ -191,7 +218,7 @@
       }}
     dfsa_results: []
     dfsa_selected_controls: []
-    dfsa_started_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%S.%fZ') }}"
+    dfsa_started_at: "{{ dfsa_started_at_probe.stdout }}"
 
 - name: Validate external controls are mappings
   ansible.builtin.assert:
@@ -232,6 +259,7 @@
       - >-
         item.profiles is sequence
         and item.profiles is not string
+        and item.profiles is not mapping
         and item.profiles | length > 0
       - item.profiles | select('string') | list | length == item.profiles | length
       - item.profiles | unique | list | length == item.profiles | length
@@ -243,6 +271,7 @@
       - >-
         item.references is sequence
         and item.references is not string
+        and item.references is not mapping
         and item.references | length > 0
       - >-
         item.assessment != "manual"

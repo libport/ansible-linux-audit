@@ -185,7 +185,7 @@
     dfsa_record_evidence: "{{ dfsa_id_004_probe.stdout | default(dfsa_id_004_probe.stderr, true) }}"
   when: "'DFSA-ID-004' in dfsa_selected_ids"
 
-- name: Inspect the privileged command path
+- name: Inspect the privilege-escalated audit command path
   ansible.builtin.shell: |
     problems=()
     probe_error=0
@@ -213,7 +213,7 @@
       exit 2
     fi
     [[ -z "${problems[*]}" ]] && {
-      printf '%s\n' 'Privileged PATH entries are absolute, root-owned, and not broadly writable'
+      printf '%s\n' 'Audit PATH entries are absolute, root-owned, and not broadly writable'
       exit 0
     }
     printf '%s\n' "${problems[@]}"
@@ -238,9 +238,9 @@
       }}
     dfsa_record_reason: >-
       {{
-        'Unable to inspect one or more privileged PATH entries.'
+        'Unable to inspect one or more privilege-escalated audit PATH entries.'
         if dfsa_id_005_probe.rc == 2
-        else 'Privileged PATH entries must be absolute, root-owned, and not group/world writable.'
+        else 'Audit PATH entries must be absolute, root-owned, and not group/world writable.'
       }}
     dfsa_record_evidence: "{{ dfsa_id_005_probe.stdout | default(dfsa_id_005_probe.stderr, true) }}"
   when: "'DFSA-ID-005' in dfsa_selected_ids"
